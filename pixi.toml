@@ -17,8 +17,11 @@ jupyter = ">=1.1.1,<2"
 ipywidgets = ">=8.1.5,<9"
 librosa = ">=0.10.2.post1,<0.11"
 pysoundfile = ">=0.12.1,<0.13"
-numpy = "<=2.0"
+numpy = "<2.0"
 
 [pypi-dependencies]
 praat-parselmouth = "*"
 marimo = ">=0.9.27, <0.10"
+bvhio = ">=1.4.6, <2"
+aitviewer = ">=1.13.0, <2"
+bpy = ">=4.0.0, <5"
