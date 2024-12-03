@@ -296,6 +296,9 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/11/64/42ec1b0bd72d87f87bde6ceb6869f444d91a2d601f2e67cd05febc0346a1/PyQt5-5.15.11-cp38-abi3-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/92/4c/c9026ca280f2cd4bef562cfb0a5050eb23f1e7fe1b85aa8455eb6ea437bf/PyQt5_Qt5-5.15.15-py3-none-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/f9/cb/5989258c3d70c78eabaebe3ac900c56c863caf6de7961e4b7b556a8c9e7a/PyQt5_sip-12.15.0-cp310-cp310-macosx_10_9_universal2.whl
+      - pypi: https://files.pythonhosted.org/packages/15/2b/a0c516931697214dcb93b24a62f54b7467194ba1c76f3f7a55cb3a120cc9/PyQt6-6.7.1-cp38-abi3-macosx_11_0_universal2.whl
+      - pypi: https://files.pythonhosted.org/packages/ec/63/a85bdd7c66800208f0af417bb4d07cb1543a75384021e4594e66d919f855/PyQt6_Qt6-6.7.3-py3-none-macosx_11_0_arm64.whl
+      - pypi: https://files.pythonhosted.org/packages/9a/4f/dd03722e9b9810906d7bc48e68a8c29d1092fb90ee7933053e3fed0f8fe4/PyQt6_sip-13.8.0-cp310-cp310-macosx_10_9_universal2.whl
       - pypi: https://files.pythonhosted.org/packages/1d/47/4ade75bc096bd4db0583a7bec6169cc26f04898983ce3d88aefb31140681/roma-1.5.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/a8/23/9db40fa19c453fabf94f7a35c61c58f20e8200b4734a20839515a19da790/ruff-0.8.1-py3-none-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/65/15/1879307aaa2c771aa8ef8f00a171a85033bffc6b2553cfd2657426881452/scikit_image-0.24.0-cp310-cp310-macosx_12_0_arm64.whl
@@ -3470,6 +3473,23 @@ packages:
   name: pyqt5-sip
   version: 12.15.0
   sha256: 749f7a3ffd6e3d2d5db65ed92c95cbd14490631595c61f0c0672c9238bfb17de
+  requires_python: '>=3.8'
+- pypi: https://files.pythonhosted.org/packages/15/2b/a0c516931697214dcb93b24a62f54b7467194ba1c76f3f7a55cb3a120cc9/PyQt6-6.7.1-cp38-abi3-macosx_11_0_universal2.whl
+  name: pyqt6
+  version: 6.7.1
+  sha256: f053378e3aef6248fa612c8afddda17f942fb63f9fe8a9aeb2a6b6b4cbb0eba9
+  requires_dist:
+  - pyqt6-sip>=13.8,<14
+  - pyqt6-qt6>=6.7.0,<6.8.0
+  requires_python: '>=3.8'
+- pypi: https://files.pythonhosted.org/packages/ec/63/a85bdd7c66800208f0af417bb4d07cb1543a75384021e4594e66d919f855/PyQt6_Qt6-6.7.3-py3-none-macosx_11_0_arm64.whl
+  name: pyqt6-qt6
+  version: 6.7.3
+  sha256: 8551732984fb36a5f4f3db51eafc4e8e6caf18617365830285306f2db17a94c2
+- pypi: https://files.pythonhosted.org/packages/9a/4f/dd03722e9b9810906d7bc48e68a8c29d1092fb90ee7933053e3fed0f8fe4/PyQt6_sip-13.8.0-cp310-cp310-macosx_10_9_universal2.whl
+  name: pyqt6-sip
+  version: 13.8.0
+  sha256: cedd554c643e54c4c2e12b5874781a87441a1b405acf3650a4a2e1df42aae231
   requires_python: '>=3.8'
 - conda: https://conda.anaconda.org/conda-forge/noarch/pysocks-1.7.1-pyha2e5f31_6.tar.bz2
   sha256: a42f826e958a8d22e65b3394f437af7332610e43ee313393d1cf143f0a2d274b
