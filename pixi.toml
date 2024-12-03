@@ -1,0 +1,24 @@
+[project]
+authors = ["Ojas Shirekar <ojas.shirekar@ojas.dev>"]
+channels = ["conda-forge"]
+description = "Add a short description here"
+name = "gig_interveners"
+platforms = ["osx-arm64"]
+version = "0.1.0"
+
+[tasks]
+
+[dependencies]
+python = "3.10.*"
+ipython = ">=8.29.0,<9"
+jupyterlab = ">=4.3.1,<5"
+nodejs = ">=22.11.0,<22.12"
+jupyter = ">=1.1.1,<2"
+ipywidgets = ">=8.1.5,<9"
+librosa = ">=0.10.2.post1,<0.11"
+pysoundfile = ">=0.12.1,<0.13"
+numpy = "<=2.0"
+
+[pypi-dependencies]
+praat-parselmouth = "*"
+marimo = ">=0.9.27, <0.10"
