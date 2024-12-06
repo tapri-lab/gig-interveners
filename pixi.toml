@@ -1,9 +1,9 @@
 [project]
 authors = ["Ojas Shirekar <ojas.shirekar@ojas.dev>"]
-channels = ["conda-forge"]
+channels = ["conda-forge", "legate"]
 description = "Add a short description here"
 name = "gig_interveners"
-platforms = ["osx-arm64"]
+platforms = ["osx-arm64", "linux-64"]
 version = "0.1.0"
 
 [tasks]
