@@ -1,0 +1,13 @@
+joint_params:
+  RightHand: 
+    damping_factor: 0.9
+    window_size: 51
+    iterations: 8
+  RightArm: 
+    damping_factor: 0.9
+    window_size: 51
+    iterations: 8
+  RightForeArm: 
+    damping_factor: 0.9
+    window_size: 51
+    iterations: 8

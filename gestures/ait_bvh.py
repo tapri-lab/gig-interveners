@@ -1,11 +1,13 @@
 from aitviewer.renderables.skeletons import Skeletons
 from aitviewer.viewer import Viewer
-
+from pathlib import Path
 from aitviewer.configuration import CONFIG as C
-C.window_type = "pyqt6"
+import tyro
 
-if __name__ == "__main__":
-    bvh = Skeletons.from_bvh("/Users/ojas/projects/data/Session_1/c/c-cut.bvh")
+C.window_type = "pyglet"
+
+def main(bvh_path: Path):
+    bvh = Skeletons.from_bvh(bvh_path.expanduser(), z_up=True)
     viewer = Viewer()
     viewer.scene.add(bvh)
 
@@ -14,3 +16,6 @@ if __name__ == "__main__":
 
     viewer.run_animations = True
     viewer.run()
+
+if __name__ == "__main__":
+    tyro.cli(main)
