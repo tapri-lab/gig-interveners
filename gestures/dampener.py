@@ -1,12 +1,14 @@
-import numpy as np
-from scipy.signal import savgol_filter
+from pathlib import Path
+from typing import Dict, List, Optional
+
 import bvhio
 import glm
-from typing import Dict, Optional
-from pathlib import Path
-import tyro
-from wasabi import msg
+import numpy as np
 import yaml
+from scipy.signal import savgol_filter
+from tqdm.auto import tqdm, trange
+from tyro.extras import subcommand_cli_from_dict
+from wasabi import msg
 
 
 def dampen_multiple_joints(file_path: Path, joint_params: Dict, output_path: Optional[Path] = None):
@@ -75,7 +77,54 @@ def dampen_multiple_joints(file_path: Path, joint_params: Dict, output_path: Opt
     bvhio.writeHierarchy(output_path, root, 1 / 30)
 
 
+def extract_world_positions(file_path: Path, joint_names: List[str], output_path: Optional[Path] = None):
+    """
+    Extract the world positions of multiple joints in a BVH file.
+    Args:
+        file_path: Path to the input BVH file.
+        joint_names: List of joint names to extract world positions.
+    Returns:
+        Dict: Dictionary containing joint names as keys and their world positions as values.
+    """
+    root = bvhio.readAsHierarchy(file_path)
+    frame_range = root.getKeyframeRange()[1] + 1
+
+    # Dict to store positions for each joint
+    joint_positions = {}
+
+    msg.info(f"Extracting world positions for {joint_names} joints")
+
+    for joint_name in (pbar := tqdm(joint_names)):
+        pbar.set_description(f"Processing {joint_name}")
+        target_joint = root.filter(joint_name)[0]
+        positions = []
+
+        for frame in (pbar2 := trange(frame_range)):
+            root.loadPose(frame, recursive=True)
+            pos = target_joint.PositionWorld
+            positions.append([pos.x, pos.y, pos.z])
+
+            if frame < 5:
+                print(f"Frame {frame}: {pos}")
+
+        joint_positions[joint_name] = np.array(positions)
+    if output_path is None:
+        output_path = Path("world_positions.npz")
+
+    msg.info(f"Saving world positions to {output_path}")
+    np.savez(output_path, **joint_positions)
+
+    return joint_positions
+
+
 def main(input_path: Path, config_path: Path, output_path: Optional[Path] = None):
+    """
+    Dampen the motion of multiple joints in a BVH file using Savitzky-Golay filter.
+    Args:
+        input_path: Path to the input BVH file.
+        config_path: Path to the YAML configuration file.
+        output_path: Path to save the output BVH file. If not provided, the input file will be overwritten.
+    """
     cfg = yaml.load(config_path.read_text(), Loader=yaml.Loader)
     msg.info(f"Loaded config from {config_path}")
     msg.divider("Config")
@@ -84,4 +133,9 @@ def main(input_path: Path, config_path: Path, output_path: Optional[Path] = None
 
 
 if __name__ == "__main__":
-    tyro.cli(main)
+    subcommand_cli_from_dict(
+        dict(
+            dampen=main,
+            extract=extract_world_positions,
+        )
+    )
