@@ -1,73 +1,63 @@
 from pathlib import Path
+from typing import Tuple
 
-import librosa
 import numpy as np
+import parselmouth
 import tyro
-from scipy.signal import savgol_filter
-
-
-def f0_limited(audio_path, fmin_hz=65, fmax_hz=400, smoothing_window=51, polyorder=3):
-    y, sr = librosa.load(audio_path)
-
-    # extract f0
-    f0, voiced_flag, _ = librosa.pyin(y, fmin=librosa.note_to_hz("C2"), fmax=librosa.note_to_hz("C7"))
-
-    # clip f0 values to the desired range
-    f0_clipped = np.clip(f0, fmin_hz, fmax_hz)
-
-    # smooth the f0 contour
-    f0_smoothed = savgol_filter(f0_clipped, smoothing_window, polyorder)
-
-    return y, sr, f0_smoothed, voiced_flag
+from parselmouth.praat import call
+from tqdm.auto import trange
 
 
 def limit_f0_variability(
-    audio_path: Path, max_deviation_hz: float = 50.0, smoothing_window: int = 51, polyorder: int = 3
-):
+    audio_path: Path,
+    output_path: Path,
+    max_deviation_hz: float = 50.0,
+) -> parselmouth.Sound:
     """
     Limit the f0 variability in speech to stay within a max deviation from the mean f0.
 
     Args:
         audio_path: Path to audio file
+        output_path: Path to save the processed audio
         max_deviation_hz: Maximum allowed deviation from mean f0 in Hz
-        smoothing_window: Window size for smoothing (must be odd)
-        polyorder: Order of polynomial for smoothing for the Savitzky-Golay filter
+    Returns:
+        parselmouth.Sound: Processed sound object
     """
-    # Get f0 contour using existing function
-    y, sr, f0 = f0_limited(audio_path, smoothing_window=smoothing_window, polyorder=polyorder)
+    # Load sound
+    audio_path = Path(audio_path).expanduser()
+    output_path = str(Path(output_path).expanduser())
+    sound = parselmouth.Sound(str(audio_path))
 
-    # Find voiced frames
-    voiced_mask = f0 > 0
+    # Create manipulation object
+    manipulation = call(sound, "To Manipulation", 0.01, 75, 600)
 
-    # Calculate mean f0 of voiced segments
-    mean_f0 = np.mean(f0[voiced_mask])
+    # Extract pitch tier
+    pitch_tier = call(manipulation, "Extract pitch tier")
+    pitch = sound.to_pitch()
 
-    # Define allowed range
-    min_f0 = mean_f0 - max_deviation_hz
-    max_f0 = mean_f0 + max_deviation_hz
+    # Get mean f0 of voiced regions
+    pitch_values = pitch.selected_array["frequency"]
+    voiced_f0 = pitch_values[pitch_values > 0]
+    mean_f0 = np.mean(voiced_f0)
 
-    # Limit f0 range
-    f0_clipped = np.clip(f0, min_f0, max_f0)
+    # Get points and limit their deviation
+    num_points = call(pitch_tier, "Get number of points")
+    for i in trange(1, num_points + 1):
+        time = call(pitch_tier, "Get time from index", i)
+        f0 = call(pitch_tier, "Get value at index", i)
 
-    # Calculate pitch shift ratio at each point
-    shift_ratio = np.ones_like(f0)
-    shift_ratio[voiced_mask] = f0_clipped[voiced_mask] / f0[voiced_mask]
+        # Limit deviation
+        limited_f0 = np.clip(f0, mean_f0 - max_deviation_hz, mean_f0 + max_deviation_hz)
 
-    # Apply time-varying pitch shift
-    frames = librosa.util.frame(y, frame_length=2048, hop_length=512)
-    shifted_frames = np.zeros_like(frames)
+        # Replace point
+        call(pitch_tier, "Remove point", i)
+        call(pitch_tier, "Add point", time, limited_f0)
 
-    for i in range(frames.shape[1]):
-        frame = frames[:, i]
-        ratio = shift_ratio[i] if i < len(shift_ratio) else 1.0
-        if not np.isnan(ratio):
-            n_steps = 12 * np.log2(ratio)
-            shifted_frames[:, i] = librosa.effects.pitch_shift(frame, sr=sr, n_steps=float(n_steps))
-
-    # Reconstruct audio
-    shifted_audio = librosa.util.fix_length(librosa.overlap_add(shifted_frames, 512), size=len(y))
-
-    return shifted_audio, sr
+    # Replace pitch tier and resynthesize
+    call([pitch_tier, manipulation], "Replace pitch tier")
+    modified_sound = call(manipulation, "Get resynthesis (overlap-add)")
+    modified_sound.save(output_path, "WAV")
+    return modified_sound
 
 
 if __name__ == "__main__":
