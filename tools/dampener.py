@@ -96,7 +96,11 @@ def extract_world_positions(file_path: Path, joint_names: List[str], output_path
 
     for joint_name in (pbar := tqdm(joint_names)):
         pbar.set_description(f"Processing {joint_name}")
-        target_joint = root.filter(joint_name)[0]
+        try:
+            target_joint = root.filter(joint_name)[0]
+        except IndexError as e:
+            msg.warn(f"Joint {joint_name} not found in the BVH file")
+            raise e
         positions = []
 
         for frame in (pbar2 := trange(frame_range)):
