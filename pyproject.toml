@@ -23,4 +23,14 @@ dependencies = [
     "scipy>=1.15.1",
     "scikit-learn>=1.6.1",
     "rich>=13.9.4",
+    "matplotlib>=3.10.0",
+    "einops>=0.8.0",
 ]
+
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.format]
+indent-style = "space"
+docstring-code-format = true
