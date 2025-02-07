@@ -3,3 +3,8 @@
 .pixi
 *.egg-info
 __pycache__/
+
+# Wim's samples
+*samples/world_positions.npz
+*samples/c-clean-30.wav
+*samples/c-cut.bvh
