@@ -110,7 +110,7 @@ def calculate_angle_changes(angles_data, change_angle_weights=None):
     angle_diff = np.zeros(n_frames)
     
     for idx, (joint1, joint2) in enumerate(angle_pairs):
-        # Get vectors and apply Savgol filter to smooth positions
+        # Get vectors and apply Savgol filter to smooth angle 
         vec1 = savgol_filter(angles_data[joint1], window_length=31, polyorder=3, axis=0)
         vec2 = savgol_filter(angles_data[joint2], window_length=31, polyorder=3, axis=0)
         
@@ -191,7 +191,7 @@ def compute_becemd(bvh_file, audio_file, plot=False):
     -----------
     1. Motion Beat Detection:
         - Extracts joint angles from BVH file
-        - Smooths positions using Savitzky-Golay filter (window=31, order=3)
+        - Smooths angles using Savitzky-Golay filter (window=31, order=3)
         - Calculates angle changes and smooths derivatives (window=15, order=3)
         - Detects beats using peak detection with:
             * threshold = 0.1 (normalized signal)
@@ -209,21 +209,16 @@ def compute_becemd(bvh_file, audio_file, plot=False):
         
     Returns:
     --------
-    dict
-        Dictionary containing:
-        - 'raw_score': Beat consistency score for raw signals
-        - 'imf1_score': Beat consistency score for first IMF
-        - 'imf2_score': Beat consistency score for second IMF
-        - 'signals': Dictionary of processed signals and detected beats
+    results : dict
+        Complete results including all signals and scores
+    cleanresults : dict
+        Simplified results with just scores and beat timings
     """
     # Load and process motion data
     angles, frame_time = extract_arm_angles(bvh_file)
     angle_diff = calculate_angle_changes(angles)
     angle_diff = scale_signal(angle_diff)
     
-    # Detect motion beats
-    motion_beats = detect_motion_beats(angle_diff, threshold=0.1, min_distance=30)
-
     # Process audio
     ampv, sr = amp_envelope(audio_file)
     target_len = len(angle_diff)
@@ -232,75 +227,75 @@ def compute_becemd(bvh_file, audio_file, plot=False):
                      ampv)
     ampv = scale_signal(ampv)
 
-    # Calculate IMFs
-    imf1_audio = scale_signal(my_get_next_imf(ampv))
-    imf2_audio = scale_signal(my_get_next_imf(ampv - imf1_audio))
-    imf1_motion = scale_signal(my_get_next_imf(angle_diff))
-    imf2_motion = scale_signal(my_get_next_imf(angle_diff - imf1_motion))
+    # Calculate IMFs for both signals
+    motion_signals = {
+        'raw': angle_diff,
+        'imf1': scale_signal(my_get_next_imf(angle_diff)),
+        'imf2': scale_signal(my_get_next_imf(angle_diff - my_get_next_imf(angle_diff)))
+    }
+    
+    audio_signals = {
+        'raw': ampv,
+        'imf1': scale_signal(my_get_next_imf(ampv)),
+        'imf2': scale_signal(my_get_next_imf(ampv - my_get_next_imf(ampv)))
+    }
 
-    # Calculate beat consistency scores
-    bc_raw, audio_beats_raw = beat_consistency_score(motion_beats, ampv)
-    bc_imf1, audio_beats_imf1 = beat_consistency_score(motion_beats, imf1_audio)
-    bc_imf2, audio_beats_imf2 = beat_consistency_score(motion_beats, imf2_audio)
+    # Calculate beats for each motion signal
+    motion_beats = {}
+    for name, signal in motion_signals.items():
+        beats = detect_motion_beats(signal, threshold=0.1, min_distance=30)
+        motion_beats[name] = beats
+
+    # Calculate cross-signal beat consistency
+    scores = {}
+    beats = {}
+    for m_name, m_beats in motion_beats.items():
+        for a_name, a_signal in audio_signals.items():
+            key = f"{m_name}_vs_{a_name}"
+            score, beat_times = beat_consistency_score(m_beats, a_signal)
+            scores[key] = score
+            beats[key] = beat_times
 
     if plot:
-        plt.figure(figsize=(15, 15))
-
-        # Plot raw signals
-        plt.subplot(311)
-        time_axis = np.arange(len(angle_diff)) / 200
-        plt.plot(time_axis, angle_diff, label='Motion', alpha=0.6)
-        plt.plot(time_axis, ampv, label='Audio', alpha=0.6)
-        plt.vlines(motion_beats, -1, 1, colors='r', label='Motion Beats', alpha=0.5)
-        plt.vlines(audio_beats_raw, -1, 1, colors='g', label='Audio Beats', alpha=0.5)
-        plt.title(f'Raw Signals (BC Score: {bc_raw:.4f})')
-        plt.ylim(-1.1, 1.1)
-        plt.legend()
-
-        # Plot IMF1
-        plt.subplot(312)
-        plt.plot(time_axis, imf1_motion, label='Motion IMF1', alpha=0.6)
-        plt.plot(time_axis, imf1_audio, label='Audio IMF1', alpha=0.6)
-        plt.vlines(motion_beats, -1, 1, colors='r', label='Motion Beats', alpha=0.5)
-        plt.vlines(audio_beats_imf1, -1, 1, colors='g', label='Audio Beats', alpha=0.5)
-        plt.title(f'IMF1 (BC Score: {bc_imf1:.4f})')
-        plt.ylim(-1.1, 1.1)
-        plt.legend()
-
-        # Plot IMF2
-        plt.subplot(313)
-        plt.plot(time_axis, imf2_motion, label='Motion IMF2', alpha=0.6)
-        plt.plot(time_axis, imf2_audio, label='Audio IMF2', alpha=0.6)
-        plt.vlines(motion_beats, -1, 1, colors='r', label='Motion Beats', alpha=0.5)
-        plt.vlines(audio_beats_imf2, -1, 1, colors='g', label='Audio Beats', alpha=0.5)
-        plt.title(f'IMF2 (BC Score: {bc_imf2:.4f})')
-        plt.ylim(-1.1, 1.1)
-        plt.legend()
+        plt.figure(figsize=(20, 15))
+        n_rows = len(motion_signals)
+        n_cols = len(audio_signals)
+        
+        for i, (m_name, m_signal) in enumerate(motion_signals.items()):
+            for j, (a_name, a_signal) in enumerate(audio_signals.items()):
+                plt.subplot(n_rows, n_cols, i * n_cols + j + 1)
+                time_axis = np.arange(len(m_signal)) / 200
+                
+                plt.plot(time_axis, m_signal, label='Motion', alpha=0.6)
+                plt.plot(time_axis, a_signal, label='Audio', alpha=0.6)
+                
+                key = f"{m_name}_vs_{a_name}"
+                plt.vlines(motion_beats[m_name], -1, 1, colors='r', 
+                         label='Motion Beats', alpha=0.5)
+                plt.vlines(beats[key], -1, 1, colors='g', 
+                         label='Audio Beats', alpha=0.5)
+                
+                plt.title(f'{m_name.upper()} vs {a_name.upper()}\n(BC Score: {scores[key]:.4f})')
+                plt.ylim(-1.1, 1.1)
+                plt.legend()
 
         plt.tight_layout()
         plt.show()
 
     # Return results
     results = {
-        'raw_score': bc_raw,
-        'imf1_score': bc_imf1,
-        'imf2_score': bc_imf2,
+        'scores': scores,
         'signals': {
-            'motion': angle_diff,
-            'audio': ampv,
-            'motion_imf1': imf1_motion,
-            'audio_imf1': imf1_audio,
-            'motion_imf2': imf2_motion,
-            'audio_imf2': imf2_audio,
+            'motion': motion_signals,
+            'audio': audio_signals,
             'motion_beats': motion_beats,
-            'audio_beats_raw': audio_beats_raw,
-            'audio_beats_imf1': audio_beats_imf1,
-            'audio_beats_imf2': audio_beats_imf2
+            'audio_beats': beats
         }
     }
-    cleanresults = {'audio_beats_raw': audio_beats_raw,
-            'audio_beats_imf1': audio_beats_imf1,
-            'audio_beats_imf2': audio_beats_imf2}
+    
+    cleanresults = {
+        'scores': scores
+    }
     
     return results, cleanresults
 
