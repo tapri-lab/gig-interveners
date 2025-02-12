@@ -1,3 +1,11 @@
+recurrence_radius: 0.2
+joints:
+  - LeftHand
+  - LeftArm
+  - LeftForeArm
+  - RightHand
+  - RightArm
+  - RightForeArm
 metrics:
-  - recurrence_indiv:
-      - rqa_metrics
+  recurrence_indiv:
+    - rqa_metrics
