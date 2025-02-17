@@ -1,10 +1,11 @@
-from rich.table import Table
-from rich.console import Console
-from typing import List, SupportsFloat, Dict
 from dataclasses import dataclass
-from rich_tools import table_to_df
 from pathlib import Path
+from typing import Any, Dict, List, SupportsFloat
+
 from pandas import DataFrame
+from rich.console import Console
+from rich.table import Table
+from rich_tools import table_to_df
 
 
 class ResultsTable:
@@ -35,5 +36,5 @@ class ResultsTable:
 @dataclass
 class Config:
     joints: List[str]
-    metrics: Dict[str, List[str]]
+    metrics: Dict[str, Any]
     recurrence_radius: float

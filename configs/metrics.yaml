@@ -7,5 +7,13 @@ joints:
   - RightArm
   - RightForeArm
 metrics:
-  recurrence_indiv:
-    - rqa_metrics
+  individual:
+    recurrence:
+      - rqa_metrics
+    beat_consistency:
+      - compute_becemd
+  pairwise:
+    recurrence:
+      - rqa_metrics
+    beat_consistency:
+      - compute_becemd

@@ -1,6 +1,7 @@
 
 # pixi environments
 .pixi
+.venv
 *.egg-info
 __pycache__/
 

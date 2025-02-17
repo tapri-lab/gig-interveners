@@ -27,6 +27,9 @@ dependencies = [
     "einops>=0.8.0",
     "pdbpp>=0.10.3",
     "rich-tools>=0.5.1",
+    "emd>=0.8.0",
+    "ipykernel>=6.29.5",
+    "pyprojroot>=0.3.0",
 ]
 
 
