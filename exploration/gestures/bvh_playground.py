@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.10.12"
+__generated_with = "0.11.5"
 app = marimo.App(width="medium")
 
 
@@ -18,7 +18,7 @@ def _():
 
 @app.cell
 def _(bvhio):
-    root = bvhio.readAsHierarchy("/Users/ojas/projects/data/c-cut.bvh")
+    root = bvhio.readAsHierarchy("/Users/ojas/projects/data/c-cut.bvh").loadPose(100)
     return (root,)
 
 
@@ -32,6 +32,12 @@ def _(root):
 def _(root):
     joint = root.filter("LeftHand")[0]
     return (joint,)
+
+
+@app.cell
+def _(bvhio, joint):
+    bvhio.Euler.fromQuatTo(joint.getKeyframe(100).RotationWorld)
+    return
 
 
 @app.cell

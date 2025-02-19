@@ -2,10 +2,19 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, SupportsFloat
 
+from omegaconf import OmegaConf
 from pandas import DataFrame
+from pyprojroot import here
 from rich.console import Console
 from rich.table import Table
 from rich_tools import table_to_df
+
+
+def here_resolver():
+    return here()
+
+
+OmegaConf.register_new_resolver("here", here_resolver)
 
 
 class ResultsTable:
@@ -35,6 +44,8 @@ class ResultsTable:
 
 @dataclass
 class Config:
+    bvh_file: Path
+    audio_file: Path
     joints: List[str]
     metrics: Dict[str, Any]
     recurrence_radius: float

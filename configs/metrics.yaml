@@ -1,4 +1,6 @@
 recurrence_radius: 0.2
+bvh_file: ${here:}/samples/c-cut.bvh
+audio_file: ${here:}/samples/c-clean-30.wav
 joints:
   - LeftHand
   - LeftArm
@@ -16,4 +18,4 @@ metrics:
     recurrence:
       - rqa_metrics
     beat_consistency:
-      - compute_becemd
+      # - compute_becemd

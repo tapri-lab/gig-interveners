@@ -1,14 +1,14 @@
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 import einops
 import numpy as np
 import synchronization as sync
 import tyro
-import yaml
-from beatconsistencyEMD import compute_becemd
+from becemd import compute_becemd
 from cmd_utils import Config, ResultsTable
 from numpy.typing import NDArray
+from omegaconf import OmegaConf
 from tqdm.rich import tqdm
 from wasabi import msg
 
@@ -85,8 +85,18 @@ def joint_level_self_recurrence(
     return results
 
 
-def beat_consistency(bvh_file: Path, audio_file: Path, full_pairwise: bool = False, plot: bool = False):
-    pass
+def beat_consistency(
+    bvh_file: Path, audio_file: Path, full_pairwise: bool = False, plot: bool = False
+) -> Tuple[ResultsTable, Dict[str, float]]:
+    table = ResultsTable(title="Beat Consistency")
+    if full_pairwise:
+        pass
+    else:
+        # for single person only
+        _, res = compute_becemd(bvh_file, audio_file, plot=plot)
+        for k in res["scores"]:
+            table.add_result(k, res["scores"][k])
+    return table, res
 
 
 def main(cfg_path: Path, npz_path: Path) -> int:
@@ -94,11 +104,13 @@ def main(cfg_path: Path, npz_path: Path) -> int:
     Analyze the synchronization metrics.
     Args:
         cfg_path: Path to the configuration file.
+        npz_path: Path to the npz file with world coordinates.
     """
-    config = yaml.load(cfg_path.read_text(), Loader=yaml.FullLoader)
+    config = OmegaConf.load(cfg_path)
     config = Config(**config)
     metrics = config.metrics
     individual_metrics = metrics["individual"]
+    compute_pairwise_bec = metrics["pairwise"]["beat_consistency"] is not None
     data = np.load(npz_path.expanduser())
 
     # Process individuals and then pairwise for the group
@@ -108,7 +120,10 @@ def main(cfg_path: Path, npz_path: Path) -> int:
     )
     for res_table in results:
         res_table.show()
-    becemd_results = compute_becemd()
+    msg.divider("Beat Consistency Scores")
+    bec_table, becemd_results = beat_consistency(config.bvh_file, config.audio_file, compute_pairwise_bec, False)
+    bec_table.show()
+
     return 0
 
 

@@ -233,8 +233,7 @@ def compute_becemd(bvh_file: Path, audio_file: Path, plot: bool = False):
     cleanresults : dict
         Simplified results with just scores and beat timings
     """
-    bvh_file = str(bvh_file.expanduser())
-    audio_file = str(audio_file.expanduser())
+
     # Load and process motion data
     angles, frame_time = extract_arm_angles(bvh_file)
     angle_diff = calculate_angle_changes(angles)

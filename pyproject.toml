@@ -30,6 +30,7 @@ dependencies = [
     "emd>=0.8.0",
     "ipykernel>=6.29.5",
     "pyprojroot>=0.3.0",
+    "omegaconf>=2.3.0",
 ]
 
 
