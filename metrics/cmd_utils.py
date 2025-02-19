@@ -9,12 +9,8 @@ from rich.console import Console
 from rich.table import Table
 from rich_tools import table_to_df
 
-
-def here_resolver():
-    return here()
-
-
-OmegaConf.register_new_resolver("here", here_resolver)
+# Register the "here" resolver
+OmegaConf.register_new_resolver("here", lambda: here())
 
 
 class ResultsTable:
@@ -44,8 +40,8 @@ class ResultsTable:
 
 @dataclass
 class Config:
-    bvh_file: Path
-    audio_file: Path
+    bvh_files: Path
+    audio_files: Path
     joints: List[str]
     metrics: Dict[str, Any]
     recurrence_radius: float

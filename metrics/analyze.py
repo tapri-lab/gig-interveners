@@ -11,6 +11,7 @@ from numpy.typing import NDArray
 from omegaconf import OmegaConf
 from tqdm.rich import tqdm
 from wasabi import msg
+import itertools
 
 # fmt: off
 function_dict = {
@@ -86,17 +87,33 @@ def joint_level_self_recurrence(
 
 
 def beat_consistency(
-    bvh_file: Path, audio_file: Path, full_pairwise: bool = False, plot: bool = False
-) -> Tuple[ResultsTable, Dict[str, float]]:
-    table = ResultsTable(title="Beat Consistency")
+    bvh_files: List[Path],
+    audio_files: List[Path],
+    full_pairwise: bool = False,
+    plot: bool = False,
+) -> Tuple[List[ResultsTable], Dict[str, float]]:
+    tables = []
     if full_pairwise:
-        pass
+        pairings = list(itertools.product(bvh_files, audio_files))
+        for p_motion, p_audio in (pbar := tqdm(pairings, total=len(pairings))):
+            pbar.set_description(f"Processing pair {p_motion.stem}, {p_audio.stem}")
+            table = ResultsTable(title=f"Beat Consistency - Pair {p_motion.stem} - {p_audio.stem}")
+            _, res = compute_becemd(p_motion, p_audio, plot=plot)
+            for k in res["scores"]:
+                table.add_result(k, res["scores"][k])
+            tables.append(table)
     else:
         # for single person only
-        _, res = compute_becemd(bvh_file, audio_file, plot=plot)
-        for k in res["scores"]:
-            table.add_result(k, res["scores"][k])
-    return table, res
+        for p_motion, p_audio, idx in (
+            pbar := tqdm(zip(bvh_files, audio_files, range(len(bvh_files))), total=len(bvh_files))
+        ):
+            pbar.set_description(f"Processing person {p_motion.stem}, {p_audio.stem}")
+            table = ResultsTable(title=f"Beat Consistency - Person {p_motion.stem}")
+            _, res = compute_becemd(p_motion, p_audio, plot=plot)
+            for k in res["scores"]:
+                table.add_result(k, res["scores"][k])
+            tables.append(table)
+    return tables, res
 
 
 def main(cfg_path: Path, npz_path: Path) -> int:
@@ -106,8 +123,14 @@ def main(cfg_path: Path, npz_path: Path) -> int:
         cfg_path: Path to the configuration file.
         npz_path: Path to the npz file with world coordinates.
     """
+    schema = OmegaConf.structured(Config)
     config = OmegaConf.load(cfg_path)
-    config = Config(**config)
+    config = OmegaConf.merge(schema, config)
+    bvh_file_path = config.bvh_files
+    audio_file_path = config.audio_files
+    bvh_files = list(bvh_file_path.glob("*.bvh"))
+    audio_files = list(audio_file_path.glob("*.wav"))
+
     metrics = config.metrics
     individual_metrics = metrics["individual"]
     compute_pairwise_bec = metrics["pairwise"]["beat_consistency"] is not None
@@ -121,8 +144,9 @@ def main(cfg_path: Path, npz_path: Path) -> int:
     for res_table in results:
         res_table.show()
     msg.divider("Beat Consistency Scores")
-    bec_table, becemd_results = beat_consistency(config.bvh_file, config.audio_file, compute_pairwise_bec, False)
-    bec_table.show()
+    bec_tables, becemd_results = beat_consistency(bvh_files, audio_files, compute_pairwise_bec, False)
+    for table in bec_tables:
+        table.show()
 
     return 0
 
