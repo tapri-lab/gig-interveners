@@ -31,6 +31,7 @@ dependencies = [
     "ipykernel>=6.29.5",
     "pyprojroot>=0.3.0",
     "omegaconf>=2.3.0",
+    "zarr>=2.18.3",
 ]
 
 

@@ -6,7 +6,7 @@ import numpy as np
 import synchronization as sync
 import tyro
 from becemd import compute_becemd
-from cmd_utils import Config, ResultsTable
+from cmd_utils import Config, ResultsTable, read_zarr_into_dict
 from numpy.typing import NDArray
 from omegaconf import OmegaConf
 from tqdm.rich import tqdm
@@ -55,7 +55,7 @@ class BasicRQA:
 def joint_level_self_recurrence(
     metrics: List[str],
     joints: List[str],
-    data: Dict[str, NDArray],
+    data: Dict[str, Dict[str, NDArray]],  # person -> joint -> data
     recurrence_radius: float,
     frames_first: bool = True,
 ) -> List[ResultsTable]:
@@ -64,24 +64,62 @@ def joint_level_self_recurrence(
     msg.info("Calculating Recurrence Matrix")
     rqa = BasicRQA(recurrence_radius=recurrence_radius)
 
-    for joint in (pbar := tqdm(joints)):
-        pbar.set_description(f"Processing joint: {joint}")
-        res_table = ResultsTable(title=joint)
-        d = data[joint]
-        if frames_first:
-            d = einops.rearrange(d, "f d -> d f")
-        rec_matrix = rqa.calculate_rec_matrix(d)
-        for metric in metrics:
-            func = function_dict[metric]
-            if metric == "rqa_metrics":
-                rec, det, mean_length, max_length = func(rec_matrix)
-                res_table.add_result("Recurrence Rate", rec)
-                res_table.add_result("Determinism", det)
-                res_table.add_result("Mean Length", mean_length)
-                res_table.add_result("Max Length", max_length)
-                continue
-            res = func(rec_matrix)
-            res_table.add_result(metric, res)
+    for person in data:
+        for joint in (pbar := tqdm(joints)):
+            pbar.set_description(f"Processing joint: {joint}")
+            res_table = ResultsTable(title=f"{person} - {joint}")
+            d = data[person][joint]
+            if frames_first:
+                d = einops.rearrange(d, "f d -> d f")
+            rec_matrix = rqa.calculate_rec_matrix(d)
+            for metric in metrics:
+                func = function_dict[metric]
+                if metric == "rqa_metrics":
+                    rec, det, mean_length, max_length = func(rec_matrix)
+                    res_table.add_result("Recurrence Rate", rec)
+                    res_table.add_result("Determinism", det)
+                    res_table.add_result("Mean Length", mean_length)
+                    res_table.add_result("Max Length", max_length)
+                    continue
+                res = func(rec_matrix)
+                res_table.add_result(metric, res)
+            results.append(res_table)
+    return results
+
+
+def joint_level_cross_recurrence(
+    metrics: List[str],
+    joints: List[str],
+    data: Dict[str, Dict[str, NDArray]],  # person -> joint -> data
+    recurrence_radius: float,
+    frames_first: bool = True,
+) -> List[ResultsTable]:
+    results = []
+    msg.divider("Joint Level Cross Recurrence Analysis")
+    rqa = BasicRQA(recurrence_radius=recurrence_radius)
+    persons = list(data.keys())
+    persons = itertools.product(persons, persons)
+    for person1, person2 in (pbar := tqdm(persons)):
+        pbar.set_description(f"Processing person pair: {person1}, {person2}")
+        res_table = ResultsTable(title=f"{person1} vs {person2}")
+        for joint in joints:
+            d1 = data[person1][joint]
+            d2 = data[person2][joint]
+            if frames_first:
+                d1 = einops.rearrange(d1, "f d -> d f")
+                d2 = einops.rearrange(d2, "f d -> d f")
+            rec_matrix = rqa.calculate_rec_matrix(d1, d2)
+            for metric in metrics:
+                func = function_dict[metric]
+                if metric == "rqa_metrics":
+                    rec, det, mean_length, max_length = func(rec_matrix)
+                    res_table.add_result("Recurrence Rate", rec)
+                    res_table.add_result("Determinism", det)
+                    res_table.add_result("Mean Length", mean_length)
+                    res_table.add_result("Max Length", max_length)
+                    continue
+                res = func(rec_matrix)
+                res_table.add_result(metric, res)
         results.append(res_table)
     return results
 
@@ -116,7 +154,7 @@ def beat_consistency(
     return tables, res
 
 
-def main(cfg_path: Path, npz_path: Path) -> int:
+def main(cfg_path: Path, zarr_path: Path) -> int:
     """
     Analyze the synchronization metrics.
     Args:
@@ -134,7 +172,7 @@ def main(cfg_path: Path, npz_path: Path) -> int:
     metrics = config.metrics
     individual_metrics = metrics["individual"]
     compute_pairwise_bec = metrics["pairwise"]["beat_consistency"] is not None
-    data = np.load(npz_path.expanduser())
+    data = read_zarr_into_dict(zarr_path)
 
     # Process individuals and then pairwise for the group
 
@@ -144,7 +182,7 @@ def main(cfg_path: Path, npz_path: Path) -> int:
     for res_table in results:
         res_table.show()
     msg.divider("Beat Consistency Scores")
-    bec_tables, becemd_results = beat_consistency(bvh_files, audio_files, compute_pairwise_bec, False)
+    bec_tables, becemd_results = beat_consistency(bvh_files, audio_files, compute_pairwise_bec, True)
     for table in bec_tables:
         table.show()
 

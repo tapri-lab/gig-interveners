@@ -1,6 +1,7 @@
 """BEat Consistency metric using Empirical Mode Decomposition (BECEMD)"""
 
 from pathlib import Path
+from typing import Optional
 
 import emd
 import librosa
@@ -190,7 +191,12 @@ def scale_signal(signal):
     return signal
 
 
-def compute_becemd(bvh_file: Path, audio_file: Path, plot: bool = False):
+def compute_becemd(
+    bvh_file: Path,
+    audio_file: Path,
+    plot: bool = False,
+    plot_save_path: Optional[Path] = Path("becemd.png"),
+):
     """
     Compute Beat Consistency scores using Empirical Mode Decomposition (BECEMD)
 
@@ -296,7 +302,7 @@ def compute_becemd(bvh_file: Path, audio_file: Path, plot: bool = False):
                 plt.legend()
 
         plt.tight_layout()
-        plt.show()
+        plt.savefig(plot_save_path)
 
     # Return results
     results = {

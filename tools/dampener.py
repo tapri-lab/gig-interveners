@@ -9,6 +9,8 @@ from scipy.signal import savgol_filter
 from tqdm.auto import tqdm, trange
 from tyro.extras import subcommand_cli_from_dict
 from wasabi import msg
+import zarr
+import zarr.storage
 
 
 def dampen_multiple_joints(file_path: Path, joint_params: Dict, output_path: Optional[Path] = None):
@@ -77,7 +79,7 @@ def dampen_multiple_joints(file_path: Path, joint_params: Dict, output_path: Opt
     bvhio.writeHierarchy(output_path, root, 1 / 30)
 
 
-def extract_world_positions(file_path: Path, joint_names: List[str], output_path: Optional[Path] = None):
+def extract_world_positions(folder: Path, joint_names: List[str], output_path: Optional[Path] = None):
     """
     Extract the world positions of multiple joints in a BVH file.
     Args:
@@ -86,39 +88,44 @@ def extract_world_positions(file_path: Path, joint_names: List[str], output_path
     Returns:
         Dict: Dictionary containing joint names as keys and their world positions as values.
     """
-    root = bvhio.readAsHierarchy(file_path)
-    frame_range = root.getKeyframeRange()[1] + 1
+    files = folder.rglob("*.bvh")
+    output_path = Path("world_positions.zip") if output_path is None else output_path
+    store = zarr.storage.ZipStore(output_path, mode="w")
+    zarr_root = zarr.create_group(store=store)
+    persons = {}
+    for file_path in files:
+        root = bvhio.readAsHierarchy(str(file_path))
+        person = zarr_root.create_group(file_path.stem)
+        frame_range = root.getKeyframeRange()[1] + 1
 
-    # Dict to store positions for each joint
-    joint_positions = {}
+        # Dict to store positions for each joint
+        joint_positions = {}
 
-    msg.info(f"Extracting world positions for {joint_names} joints")
+        msg.info(f"Extracting world positions for {joint_names} joints")
 
-    for joint_name in (pbar := tqdm(joint_names)):
-        pbar.set_description(f"Processing {joint_name}")
-        try:
-            target_joint = root.filter(joint_name)[0]
-        except IndexError as e:
-            msg.warn(f"Joint {joint_name} not found in the BVH file")
-            raise e
-        positions = []
+        for joint_name in (pbar := tqdm(joint_names)):
+            pbar.set_description(f"Processing {joint_name}")
+            try:
+                target_joint = root.filter(joint_name)[0]
+            except IndexError as e:
+                msg.warn(f"Joint {joint_name} not found in the BVH file")
+                raise e
+            positions = []
 
-        for frame in (pbar2 := trange(frame_range)):
-            root.loadPose(frame, recursive=True)
-            pos = target_joint.PositionWorld
-            positions.append([pos.x, pos.y, pos.z])
+            for frame in (pbar2 := trange(frame_range)):
+                root.loadPose(frame, recursive=True)
+                pos = target_joint.PositionWorld
+                positions.append([pos.x, pos.y, pos.z])
 
-            if frame < 5:
-                print(f"Frame {frame}: {pos}")
-
-        joint_positions[joint_name] = np.array(positions)
-    if output_path is None:
-        output_path = Path("world_positions.npz")
-
+                if frame < 5:
+                    print(f"Frame {frame}: {pos}")
+            positions = np.array(positions)
+            p = person.create_array(name=joint_name, shape=positions.shape, dtype="float32")
+            p[:] = positions
+    store.close()
     msg.info(f"Saving world positions to {output_path}")
-    np.savez(output_path, **joint_positions)
 
-    return joint_positions
+    return persons
 
 
 def main(input_path: Path, config_path: Path, output_path: Optional[Path] = None):

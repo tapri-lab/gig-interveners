@@ -8,6 +8,8 @@ from pyprojroot import here
 from rich.console import Console
 from rich.table import Table
 from rich_tools import table_to_df
+import zarr
+import zarr.storage
 
 # Register the "here" resolver
 OmegaConf.register_new_resolver("here", lambda: here())
@@ -45,3 +47,22 @@ class Config:
     joints: List[str]
     metrics: Dict[str, Any]
     recurrence_radius: float
+
+
+def read_zarr_into_dict(zarr_path: Path):
+    """
+    Read a zarr file into a dictionary.
+    Args:
+        zarr_path: Path to the zarr file in zip format.
+    Returns:
+        Dict: Dictionary containing the zarr data.
+    """
+    store = zarr.storage.ZipStore(zarr_path, read_only=True)
+    root = zarr.open_group(store=store, mode="r")
+    res = {}
+    for person in root.keys():
+        res[person] = {}
+        for joint in root[person].keys():
+            res[person][joint] = root[person][joint][:]
+    store.close()
+    return res
