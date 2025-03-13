@@ -37,14 +37,14 @@ def _(zarr):
 
 @app.cell
 def _(root):
-    a_lh = root["a-cut"]["LeftHand"][:]
+    a_lh = root["a-cut"]["LeftHand"][:900]
     a_lh.shape
     return (a_lh,)
 
 
 @app.cell
 def _(root):
-    c_lh = root["c-cut"]["LeftHand"][:]
+    c_lh = root["c-cut"]["LeftHand"][:900]
     c_lh.shape
     return (c_lh,)
 
@@ -57,7 +57,7 @@ def _(c_lh):
 
 @app.cell
 def _(CrossRecurrencePlot, a_lh, c_lh):
-    cr = CrossRecurrencePlot(a_lh, c_lh, recurrence_rate=0.015, tau=2, normalize=True, metric="euclidean")
+    cr = CrossRecurrencePlot(a_lh, c_lh, threshold=0.2, tau=2, normalize=True, metric="euclidean")
     return (cr,)
 
 

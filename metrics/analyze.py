@@ -1,17 +1,17 @@
+import itertools
 from pathlib import Path
-from typing import Dict, List, Tuple
-
+from typing import Dict, List, Optional, Tuple
+import builtins
 import einops
-import numpy as np
 import synchronization as sync
 import tyro
 from becemd import compute_becemd
 from cmd_utils import Config, ResultsTable, read_zarr_into_dict
 from numpy.typing import NDArray
 from omegaconf import OmegaConf
+from pyunicorn.timeseries.cross_recurrence_plot import CrossRecurrencePlot
 from tqdm.rich import tqdm
 from wasabi import msg
-import itertools
 
 # fmt: off
 function_dict = {
@@ -22,8 +22,8 @@ function_dict["compute_becemd"] = compute_becemd
 # fmt: on
 
 
-class BasicRQA:
-    def __init__(self, recurrence_radius: float):
+class RQA:
+    def __init__(self, recurrence_radius: float, recurrence_rate: Optional[float] = None):
         """
         A basic rqa wrapper class
         A basic class for calculating recurrence quantification analysis metrics.
@@ -44,12 +44,24 @@ class BasicRQA:
             recurrence_radius : float - The threshold value used to create the recurrence matrix
         """
         self.recurrence_radius = recurrence_radius
+        self.recurrence_rate = recurrence_rate
 
-    def calculate_rec_matrix(self, data):
+    def calculate_rec_matrix(self, data: NDArray) -> NDArray:
         return sync.recurrence_matrix(data, radius=self.recurrence_radius)
 
-    def calculate_rqa_metrics(self, rec_matrix):
+    def calculate_rqa_metrics(self, rec_matrix: NDArray) -> Tuple[float, float, float, float]:
         return sync.rqa_metrics(rec_matrix)
+
+    def calculate_crqa_metrics(self, signal1: NDArray, signal2: NDArray) -> Tuple[float, float, float, float]:
+        match self.recurrence_rate:
+            case None:
+                cr = CrossRecurrencePlot(signal1, signal2, threshold=self.recurrence_radius, metric="euclidean")
+            case builtins.float:
+                cr = CrossRecurrencePlot(signal1, signal2, recurrence_rate=self.recurrence_rate, metric="euclidean")
+            case _:
+                raise ValueError("Invalid recurrence rate value")
+        matrix = cr.recurrence_matrix()
+        return sync.rqa_metrics(matrix)
 
 
 def joint_level_self_recurrence(
@@ -62,7 +74,7 @@ def joint_level_self_recurrence(
     results = []
     msg.divider("Joint Level Self Recurrence Analysis")
     msg.info("Calculating Recurrence Matrix")
-    rqa = BasicRQA(recurrence_radius=recurrence_radius)
+    rqa = RQA(recurrence_radius=recurrence_radius)
 
     for person in data:
         for joint in (pbar := tqdm(joints)):
@@ -92,34 +104,29 @@ def joint_level_cross_recurrence(
     joints: List[str],
     data: Dict[str, Dict[str, NDArray]],  # person -> joint -> data
     recurrence_radius: float,
-    frames_first: bool = True,
+    frames_first: bool = False,
 ) -> List[ResultsTable]:
     results = []
     msg.divider("Joint Level Cross Recurrence Analysis")
-    rqa = BasicRQA(recurrence_radius=recurrence_radius)
+    rqa = RQA(recurrence_radius=recurrence_radius)
     persons = list(data.keys())
-    persons = itertools.product(persons, persons)
+    persons = list(itertools.product(persons, persons))
     for person1, person2 in (pbar := tqdm(persons)):
         pbar.set_description(f"Processing person pair: {person1}, {person2}")
         res_table = ResultsTable(title=f"{person1} vs {person2}")
         for joint in joints:
-            d1 = data[person1][joint]
-            d2 = data[person2][joint]
+            pj1 = data[person1][joint]
+            pj2 = data[person2][joint]
             if frames_first:
-                d1 = einops.rearrange(d1, "f d -> d f")
-                d2 = einops.rearrange(d2, "f d -> d f")
-            rec_matrix = rqa.calculate_rec_matrix(d1, d2)
-            for metric in metrics:
-                func = function_dict[metric]
-                if metric == "rqa_metrics":
-                    rec, det, mean_length, max_length = func(rec_matrix)
-                    res_table.add_result("Recurrence Rate", rec)
-                    res_table.add_result("Determinism", det)
-                    res_table.add_result("Mean Length", mean_length)
-                    res_table.add_result("Max Length", max_length)
-                    continue
-                res = func(rec_matrix)
-                res_table.add_result(metric, res)
+                pj1 = einops.rearrange(pj1, "f d -> d f")
+                pj2 = einops.rearrange(pj2, "f d -> d f")
+            rec_rate, det, mean_length, max_length = rqa.calculate_crqa_metrics(pj1, pj2)
+
+            res_table.add_result("Recurrence Rate", rec_rate)
+            res_table.add_result("Determinism", det)
+            res_table.add_result("Mean Length", mean_length)
+            res_table.add_result("Max Length", max_length)
+
         results.append(res_table)
     return results
 
@@ -181,6 +188,9 @@ def main(cfg_path: Path, zarr_path: Path) -> int:
     )
     for res_table in results:
         res_table.show()
+    results = joint_level_cross_recurrence(
+        individual_metrics["recurrence"], config.joints, data, config.recurrence_radius
+    )
     msg.divider("Beat Consistency Scores")
     bec_tables, becemd_results = beat_consistency(bvh_files, audio_files, compute_pairwise_bec, True)
     for table in bec_tables:
