@@ -1,7 +1,8 @@
+import builtins
 import itertools
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-import builtins
+
 import einops
 import synchronization as sync
 import tyro
