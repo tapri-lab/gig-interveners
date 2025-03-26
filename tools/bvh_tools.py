@@ -5,12 +5,12 @@ import bvhio
 import glm
 import numpy as np
 import yaml
+import zarr
+import zarr.storage
 from scipy.signal import savgol_filter
 from tqdm.auto import tqdm, trange
 from tyro.extras import subcommand_cli_from_dict
 from wasabi import msg
-import zarr
-import zarr.storage
 
 
 def dampen_multiple_joints(file_path: Path, joint_params: Dict, output_path: Optional[Path] = None):
@@ -90,6 +90,8 @@ def extract_world_positions(folder: Path, joint_names: List[str], output_path: O
     """
     files = folder.rglob("*.bvh")
     output_path = Path("world_positions.zip") if output_path is None else output_path
+    parent_dir = output_path.parent
+    parent_dir.mkdir(exist_ok=True, parents=True)
     store = zarr.storage.ZipStore(output_path, mode="w")
     zarr_root = zarr.create_group(store=store)
     persons = {}

@@ -78,7 +78,7 @@ def split_bvh_animation(bvh_file_path, chunk_duration=30):
         scene.frame_end = end_frame
 
         # Create output filename
-        output_filename = f"{base_filename}_chunk{chunk_idx + 1:03d}_{start_frame}-{end_frame}.bvh"
+        output_filename = f"{base_filename}_chunk{chunk_idx + 1:03d}.bvh"
         output_path = os.path.join(output_dir, output_filename)
 
         # Export the chunk as BVH

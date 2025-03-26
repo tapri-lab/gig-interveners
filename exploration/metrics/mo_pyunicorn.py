@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.11.17"
+__generated_with = "0.11.26"
 app = marimo.App(width="medium")
 
 
@@ -16,9 +16,11 @@ def _():
     import scipy.stats
     import copy
     from sklearn.linear_model import LinearRegression
+    from pathlib import Path
     return (
         CrossRecurrencePlot,
         LinearRegression,
+        Path,
         copy,
         mo,
         np,
@@ -29,22 +31,35 @@ def _():
 
 
 @app.cell
-def _(zarr):
-    store = zarr.storage.ZipStore("world_positions.zip", read_only=1)
-    root = zarr.open_group(store=store, mode="r")
-    return root, store
+def _(Path, zarr):
+    zarr_path = Path("~/data/dnd/Session_1/a/a_world_pos.zip").expanduser()
+    a_store = zarr.storage.ZipStore(zarr_path, read_only=1)
+    a_root = zarr.open_group(store=a_store, mode="r")
+
+    zarr_path = Path("~/data/dnd/Session_1/c/c_world_pos.zip").expanduser()
+    c_store = zarr.storage.ZipStore(zarr_path, read_only=1)
+    c_root = zarr.open_group(store=c_store, mode="r")
+
+    chunk = 100
+    return a_root, a_store, c_root, c_store, chunk, zarr_path
 
 
 @app.cell
-def _(root):
-    a_lh = root["a-cut"]["LeftHand"][:900]
+def _(a_root):
+    list(a_root.keys())[:6]
+    return
+
+
+@app.cell
+def _(a_root, chunk):
+    a_lh = a_root[f"a_chunk{chunk}"]["LeftHand"][:900]
     a_lh.shape
     return (a_lh,)
 
 
 @app.cell
-def _(root):
-    c_lh = root["c-cut"]["LeftHand"][:900]
+def _(c_root, chunk):
+    c_lh = c_root[f"c_chunk{chunk}"]["LeftHand"][:900]
     c_lh.shape
     return (c_lh,)
 
@@ -57,13 +72,14 @@ def _(c_lh):
 
 @app.cell
 def _(CrossRecurrencePlot, a_lh, c_lh):
-    cr = CrossRecurrencePlot(a_lh, c_lh, threshold=0.2, tau=2, normalize=True, metric="euclidean")
+    # cr = CrossRecurrencePlot(a_lh, c_lh, recurrence_rate=0.02, normalize=True, metric="euclidean")
+    cr = CrossRecurrencePlot(a_lh, c_lh, threshold=0.34, normalize=True, metric="euclidean")
     return (cr,)
 
 
 @app.cell
 def _(cr):
-    cr.cross_recurrence_rate()
+    cr.cross_recurrence_rate(), cr.threshold_from_recurrence_rate(cr.distance_matrix("euclidean"), recurrence_rate=0.01)
     return
 
 

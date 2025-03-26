@@ -15,7 +15,7 @@ def _():
     import matplotlib.pyplot as plt
 
     import ott
-    from ott.geometry import pointcloud
+    from ott.geometry import pointcloud, geometry
     from ott.problems.linear import linear_problem
     from ott.solvers import linear
     from ott.solvers.linear import sinkhorn
@@ -26,6 +26,7 @@ def _():
         Callable,
         SoftDTW,
         functools,
+        geometry,
         jax,
         jnp,
         linear,
@@ -64,6 +65,19 @@ def _(pointcloud, x, y):
 
 
 @app.cell
+def _(geom):
+    cost = geom.cost_matrix
+    cost
+    return (cost,)
+
+
+@app.cell
+def _(cost):
+    cost.shape
+    return
+
+
+@app.cell
 def _(sinkhorn):
     solver = sinkhorn.Sinkhorn()
     return (solver,)
@@ -83,7 +97,13 @@ def _(jax, prob, solver):
 
 @app.cell
 def _(xs):
-    xs.matrix.sum()
+    xs.matrix.shape
+    return
+
+
+@app.cell
+def _(xs):
+    xs.reg_ot_cost
     return
 
 
@@ -96,6 +116,32 @@ def _(SoftDTW):
 @app.cell
 def _(sdtw, x, y):
     sdtw(x, y)
+    return
+
+
+@app.cell
+def _(geometry, linear):
+    def sink(a, b, cost, epsilon, min_iterations, max_iterations):
+        return linear.solve(
+            geometry.Geometry(cost_matrix=cost, epsilon=epsilon),
+            a=a,
+            b=b,
+            lse_mode=False,
+            min_iterations=min_iterations,
+            max_iterations=max_iterations,
+        ).reg_ot_cost
+    return (sink,)
+
+
+@app.cell
+def _(cost, jnp, xs):
+    jnp.trace(xs.matrix.T @ cost)
+    return
+
+
+@app.cell
+def _(xs):
+    xs.matrix
     return
 
 

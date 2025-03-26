@@ -1,21 +1,18 @@
-recurrence_radius: 0.2
-bvh_files: "${here:}/samples/"
-audio_files: "${here:}/samples/"
-joints:
-  - LeftHand
-  - LeftArm
-  # - LeftForeArm
-  # - RightHand
-  # - RightArm
-  # - RightForeArm
-metrics:
-  individual:
-    recurrence:
-      - rqa_metrics
-    beat_consistency:
-      - compute_becemd
-  pairwise:
-    recurrence:
-      - rqa_metrics
-    beat_consistency:
-      - compute_becemd
+base_data_path: "/home/ojas/data/dnd/Session_1/"
+bvh_audio_folder_paths:
+  person1:
+    bvh: "${base_data_path}/a/a_chunks/"
+    zarr: "${base_data_path}/a/a_world_pos.zip"
+    audio: "${base_data_path}/a/audio_segments/"
+  person2:
+    bvh: "${base_data_path}/c/c_chunks/"
+    zarr: "${base_data_path}/c/c_world_pos.zip"
+    audio: "${base_data_path}/c/audio_segments/"
+rqa_settings:
+  threshold: 0.2
+  # recurrence_rate: 0.02
+  joint_pair_rec:
+    - [LeftHand, RightHand]
+    - [LeftArm, RightArm]
+emd_settings:
+  cross_person: true
