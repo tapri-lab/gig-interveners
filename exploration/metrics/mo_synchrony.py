@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.11.26"
+__generated_with = "0.11.28"
 app = marimo.App(width="medium")
 
 
@@ -8,6 +8,7 @@ app = marimo.App(width="medium")
 def _():
     import marimo as mo
     from pyunicorn.timeseries.cross_recurrence_plot import CrossRecurrencePlot
+    from pyunicorn.timeseries.recurrence_plot import RecurrencePlot
     import zarr
     import seaborn as sns
     import numpy as np
@@ -17,11 +18,14 @@ def _():
     import copy
     from sklearn.linear_model import LinearRegression
     from pathlib import Path
+    import einops
     return (
         CrossRecurrencePlot,
         LinearRegression,
         Path,
+        RecurrencePlot,
         copy,
+        einops,
         mo,
         np,
         scipy,
@@ -51,23 +55,17 @@ def _(a_root):
 
 
 @app.cell
-def _(a_root, chunk):
-    a_lh = a_root[f"a_chunk{chunk}"]["LeftHand"][:900]
+def _(a_root):
+    a_lh = a_root[f"069"]["LeftHand"][:900]
     a_lh.shape
     return (a_lh,)
 
 
 @app.cell
-def _(c_root, chunk):
-    c_lh = c_root[f"c_chunk{chunk}"]["LeftHand"][:900]
+def _(c_root):
+    c_lh = c_root[f"069"]["LeftHand"][:900]
     c_lh.shape
     return (c_lh,)
-
-
-@app.cell
-def _(c_lh):
-    c_lh
-    return
 
 
 @app.cell
@@ -98,6 +96,24 @@ def _(cr):
 @app.cell
 def _(cr, sns):
     sns.heatmap(cr.recurrence_matrix())
+    return
+
+
+@app.cell
+def _(RecurrencePlot, a_lh):
+    r = RecurrencePlot(a_lh, recurrence_rate=0.02, tau=2, metric="euclidean")
+    return (r,)
+
+
+@app.cell
+def _(r):
+    r.recurrence_rate()
+    return
+
+
+@app.cell
+def _(r, rqa_metrics):
+    rqa_metrics(r.recurrence_matrix()), r.threshold_from_recurrence_rate(r.distance_matrix("euclidean"), 0.02)
     return
 
 
@@ -759,11 +775,6 @@ def _(LinearRegression, copy, np, scipy):
         sum_normalized_csd,
         symbolic_entropy,
     )
-
-
-@app.cell
-def _():
-    return
 
 
 if __name__ == "__main__":

@@ -97,7 +97,8 @@ def extract_world_positions(folder: Path, joint_names: List[str], output_path: O
     persons = {}
     for file_path in files:
         root = bvhio.readAsHierarchy(str(file_path))
-        person = zarr_root.create_group(file_path.stem)
+        chunk = file_path.stem[-3:]
+        person = zarr_root.create_group(chunk)
         frame_range = root.getKeyframeRange()[1] + 1
 
         # Dict to store positions for each joint

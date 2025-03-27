@@ -14,8 +14,6 @@
             "args": [
                 "--cfg-path",
                 "${workspaceFolder}/configs/metrics.yaml",
-                "--zarr-path",
-                "${workspaceFolder}/world_positions.zip",
             ]
         }
     ]

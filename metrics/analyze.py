@@ -1,203 +1,165 @@
-import builtins
-import itertools
+import itertools as it
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
-import einops
-import synchronization as sync
+import polars as pl
 import tyro
-from becemd import compute_becemd
-from cmd_utils import Config, ResultsTable, read_zarr_into_dict
-from numpy.typing import NDArray
+from analysis_utils import (
+    beat_consistency,
+    cross_person_joint_level_recurrence,
+    indiv_joint_level_recurrence,
+    merge_results,
+)
+from cmd_utils import Config, load_file_paths, read_zarr_into_dict
+from joblib.parallel import Parallel, delayed
 from omegaconf import OmegaConf
-from pyunicorn.timeseries.cross_recurrence_plot import CrossRecurrencePlot
-from tqdm.rich import tqdm
+from pyprojroot import here
 from wasabi import msg
 
-# fmt: off
-function_dict = {
-    name: getattr(sync, name) for name in dir(sync)
-    if callable(getattr(sync, name)) and not name.startswith("_")
-}
-function_dict["compute_becemd"] = compute_becemd
-# fmt: on
+
+def load_config(cfg_path: Path):
+    """Load and merge configuration"""
+    schema = OmegaConf.structured(Config)
+    config = OmegaConf.load(cfg_path)
+    return OmegaConf.merge(schema, config)
 
 
-class RQA:
-    def __init__(self, recurrence_radius: float, recurrence_rate: Optional[float] = None):
-        """
-        A basic rqa wrapper class
-        A basic class for calculating recurrence quantification analysis metrics.
-
-        Parameters
-        ----------
-        recurrence_radius : float
-            Threshold radius within which points are considered recurrent. This value determines
-            whether two points in phase space are considered "close enough" to be recurrent.
-
-        Notes
-        -----
-        The class provides methods to:
-        - Calculate recurrence matrices from input data
-        - Compute RQA metrics from recurrence matrices
-
-        Args:
-            recurrence_radius : float - The threshold value used to create the recurrence matrix
-        """
-        self.recurrence_radius = recurrence_radius
-        self.recurrence_rate = recurrence_rate
-
-    def calculate_rec_matrix(self, data: NDArray) -> NDArray:
-        return sync.recurrence_matrix(data, radius=self.recurrence_radius)
-
-    def calculate_rqa_metrics(self, rec_matrix: NDArray) -> Tuple[float, float, float, float]:
-        return sync.rqa_metrics(rec_matrix)
-
-    def calculate_crqa_metrics(self, signal1: NDArray, signal2: NDArray) -> Tuple[float, float, float, float]:
-        match self.recurrence_rate:
-            case None:
-                cr = CrossRecurrencePlot(signal1, signal2, threshold=self.recurrence_radius, metric="euclidean")
-            case builtins.float:
-                cr = CrossRecurrencePlot(signal1, signal2, recurrence_rate=self.recurrence_rate, metric="euclidean")
-            case _:
-                raise ValueError("Invalid recurrence rate value")
-        matrix = cr.recurrence_matrix()
-        return sync.rqa_metrics(matrix)
+def prepare_analysis_inputs(df):
+    """Prepare inputs for analysis"""
+    persons = df["person"].unique().to_list()
+    all_chunks = df["chunk_name"].unique().to_list()
+    all_pairs = list(it.product(persons, persons))
+    all_pairs = [pair for pair in all_pairs if pair[0] != pair[1]]
+    return persons, all_chunks, all_pairs
 
 
-def joint_level_self_recurrence(
-    metrics: List[str],
-    joints: List[str],
-    data: Dict[str, Dict[str, NDArray]],  # person -> joint -> data
-    recurrence_radius: float,
-    frames_first: bool = True,
-) -> List[ResultsTable]:
-    results = []
-    msg.divider("Joint Level Self Recurrence Analysis")
-    msg.info("Calculating Recurrence Matrix")
-    rqa = RQA(recurrence_radius=recurrence_radius)
-
-    for person in data:
-        for joint in (pbar := tqdm(joints)):
-            pbar.set_description(f"Processing joint: {joint}")
-            res_table = ResultsTable(title=f"{person} - {joint}")
-            d = data[person][joint]
-            if frames_first:
-                d = einops.rearrange(d, "f d -> d f")
-            rec_matrix = rqa.calculate_rec_matrix(d)
-            for metric in metrics:
-                func = function_dict[metric]
-                if metric == "rqa_metrics":
-                    rec, det, mean_length, max_length = func(rec_matrix)
-                    res_table.add_result("Recurrence Rate", rec)
-                    res_table.add_result("Determinism", det)
-                    res_table.add_result("Mean Length", mean_length)
-                    res_table.add_result("Max Length", max_length)
-                    continue
-                res = func(rec_matrix)
-                res_table.add_result(metric, res)
-            results.append(res_table)
-    return results
+def run_indiv_joint_analysis(pll_exec, zarr_paths, person_joint_pairs, all_chunks, rqa_settings) -> pl.DataFrame:
+    """Run individual joint level recurrence analysis"""
+    msg.divider("Self Joint Level Recurrence Analysis")
+    indiv_rqa_per_joint = (
+        delayed(indiv_joint_level_recurrence)(
+            read_zarr_into_dict(zarr_paths[person], chunk, joint),
+            person,
+            joint,
+            chunk,
+            rqa_settings.threshold,
+            rqa_settings.recurrence_rate,
+        )
+        for person, joint in person_joint_pairs
+        for chunk in all_chunks
+    )
+    indiv_out = pll_exec(indiv_rqa_per_joint)
+    indiv_out = merge_results(indiv_out)
+    print(indiv_out.head())
+    return indiv_out
 
 
-def joint_level_cross_recurrence(
-    metrics: List[str],
-    joints: List[str],
-    data: Dict[str, Dict[str, NDArray]],  # person -> joint -> data
-    recurrence_radius: float,
-    frames_first: bool = False,
-) -> List[ResultsTable]:
-    results = []
+def run_cross_person_analysis(pll_exec, zarr_paths, all_pairs, all_chunks, rqa_settings) -> pl.DataFrame:
+    """Run joint level cross recurrence analysis"""
     msg.divider("Joint Level Cross Recurrence Analysis")
-    rqa = RQA(recurrence_radius=recurrence_radius)
-    persons = list(data.keys())
-    persons = list(itertools.product(persons, persons))
-    for person1, person2 in (pbar := tqdm(persons)):
-        pbar.set_description(f"Processing person pair: {person1}, {person2}")
-        res_table = ResultsTable(title=f"{person1} vs {person2}")
-        for joint in joints:
-            pj1 = data[person1][joint]
-            pj2 = data[person2][joint]
-            if frames_first:
-                pj1 = einops.rearrange(pj1, "f d -> d f")
-                pj2 = einops.rearrange(pj2, "f d -> d f")
-            rec_rate, det, mean_length, max_length = rqa.calculate_crqa_metrics(pj1, pj2)
-
-            res_table.add_result("Recurrence Rate", rec_rate)
-            res_table.add_result("Determinism", det)
-            res_table.add_result("Mean Length", mean_length)
-            res_table.add_result("Max Length", max_length)
-
-        results.append(res_table)
-    return results
+    cross_rqa = (
+        delayed(cross_person_joint_level_recurrence)(
+            read_zarr_into_dict(zarr_paths, chunk),
+            person1,
+            person2,
+            chunk,
+            rqa_settings.threshold,
+            rqa_settings.recurrence_rate,
+        )
+        for person1, person2 in all_pairs
+        for chunk in all_chunks
+    )
+    cross_out = pll_exec(cross_rqa)
+    cross_out = [x for xs in cross_out for x in xs]
+    cross_out = merge_results(cross_out)
+    print(cross_out.head())
+    return cross_out
 
 
-def beat_consistency(
-    bvh_files: List[Path],
-    audio_files: List[Path],
-    full_pairwise: bool = False,
-    plot: bool = False,
-) -> Tuple[List[ResultsTable], Dict[str, float]]:
-    tables = []
-    if full_pairwise:
-        pairings = list(itertools.product(bvh_files, audio_files))
-        for p_motion, p_audio in (pbar := tqdm(pairings, total=len(pairings))):
-            pbar.set_description(f"Processing pair {p_motion.stem}, {p_audio.stem}")
-            table = ResultsTable(title=f"Beat Consistency - Pair {p_motion.stem} - {p_audio.stem}")
-            _, res = compute_becemd(p_motion, p_audio, plot=plot)
-            for k in res["scores"]:
-                table.add_result(k, res["scores"][k])
-            tables.append(table)
-    else:
-        # for single person only
-        for p_motion, p_audio, idx in (
-            pbar := tqdm(zip(bvh_files, audio_files, range(len(bvh_files))), total=len(bvh_files))
-        ):
-            pbar.set_description(f"Processing person {p_motion.stem}, {p_audio.stem}")
-            table = ResultsTable(title=f"Beat Consistency - Person {p_motion.stem}")
-            _, res = compute_becemd(p_motion, p_audio, plot=plot)
-            for k in res["scores"]:
-                table.add_result(k, res["scores"][k])
-            tables.append(table)
-    return tables, res
+def run_beat_consistency_analysis(pll_exec, df) -> pl.DataFrame:
+    """Run beat consistency analysis for individuals"""
+    msg.divider("Self Beat Consistency Scores")
+    bec_tables = (
+        delayed(beat_consistency)(
+            row["bvh"],
+            row["audio"],
+            row["person"],
+            row["chunk_name"],
+            plot=False,
+        )
+        for row in df.iter_rows(named=True)
+    )
+    bec_tables = pll_exec(bec_tables)
+    bec_tables = merge_results(bec_tables)
+    print(bec_tables.head())
+    return bec_tables
 
 
-def main(cfg_path: Path, zarr_path: Path) -> int:
+def run_cross_beat_consistency_analysis(pll_exec, df) -> pl.DataFrame:
+    """Run beat consistency analysis across persons"""
+    msg.divider("Beat Consistency Scores Cross Person")
+    bec_subset = (
+        df.select(["person", "bvh", "audio", "chunk_name"])
+        .join(df.select(["person", "bvh", "audio", "chunk_name"]), how="cross")
+        .filter(pl.col("person") != pl.col("person_right"))
+        .select(["person", "person_right", "bvh", "audio_right", "chunk_name"])
+        .unique(subset=["person", "person_right", "chunk_name"])
+    )
+    bec_tables_cross = (
+        delayed(beat_consistency)(
+            row["bvh"],
+            row["audio_right"],
+            row["person"] + "_" + row["person_right"],
+            row["chunk_name"],
+            plot=False,
+        )
+        for row in bec_subset.iter_rows(named=True)
+    )
+    bec_tables_cross = pll_exec(bec_tables_cross)
+    bec_tables_cross = merge_results(bec_tables_cross)
+    print(bec_tables_cross.head())
+    return bec_tables_cross
+
+
+def main(cfg_path: Path, n_jobs: int = -1, output_dir: Path = Path(here() / "results")) -> int:
     """
     Analyze the synchronization metrics.
     Args:
         cfg_path: Path to the configuration file.
-        npz_path: Path to the npz file with world coordinates.
+        n_jobs: Number of parallel jobs to run. Default is -1, which uses all available cores.
     """
-    schema = OmegaConf.structured(Config)
-    config = OmegaConf.load(cfg_path)
-    config = OmegaConf.merge(schema, config)
-    bvh_file_path = config.bvh_files
-    audio_file_path = config.audio_files
-    bvh_files = list(bvh_file_path.glob("*.bvh"))
-    audio_files = list(audio_file_path.glob("*.wav"))
+    # Load configuration
+    config = load_config(cfg_path)
 
-    metrics = config.metrics
-    individual_metrics = metrics["individual"]
-    compute_pairwise_bec = metrics["pairwise"]["beat_consistency"] is not None
-    data = read_zarr_into_dict(zarr_path)
+    # Load data
+    df, zarr_paths = load_file_paths(config.bvh_audio_folder_paths)
 
-    # Process individuals and then pairwise for the group
+    # Prepare analysis inputs
+    persons, all_chunks, all_pairs = prepare_analysis_inputs(df)
 
-    results = joint_level_self_recurrence(
-        individual_metrics["recurrence"], config.joints, data, config.recurrence_radius
-    )
-    for res_table in results:
-        res_table.show()
-    results = joint_level_cross_recurrence(
-        individual_metrics["recurrence"], config.joints, data, config.recurrence_radius
-    )
-    msg.divider("Beat Consistency Scores")
-    bec_tables, becemd_results = beat_consistency(bvh_files, audio_files, compute_pairwise_bec, True)
-    for table in bec_tables:
-        table.show()
+    # Setup RQA parameters
+    rqa_settings = config.rqa_settings
+    rqa_joints = rqa_settings.indiv_joints
+    person_joint_pairs = list(it.product(persons, rqa_joints))
+    output_dir.mkdir(exist_ok=True, parents=True)
+    msg.info(f"Output directory: {output_dir}")
 
-    return 0
+    # Run analyses in parallel
+    with Parallel(n_jobs=n_jobs) as pll_exec:
+        # Individual joint analysis
+        indiv_out = run_indiv_joint_analysis(pll_exec, zarr_paths, person_joint_pairs, all_chunks, rqa_settings)
+        indiv_out.write_parquet(output_dir / "indiv_joint_recurrence.parquet")
+
+        # Cross-person analysis
+        cross_out = run_cross_person_analysis(pll_exec, zarr_paths, all_pairs, all_chunks, rqa_settings)
+        cross_out.write_parquet(output_dir / "cross_joint_recurrence.parquet")
+
+        # Beat consistency analysis
+        bec_tables = run_beat_consistency_analysis(pll_exec, df)
+        bec_tables.write_parquet(output_dir / "beat_consistency.parquet")
+
+        # Cross beat consistency analysis
+        bec_tables_cross = run_cross_beat_consistency_analysis(pll_exec, df)
+        bec_tables_cross.write_parquet(output_dir / "cross_beat_consistency.parquet")
 
 
 if __name__ == "__main__":
