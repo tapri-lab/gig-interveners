@@ -2,13 +2,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+import numpy as np
 import polars as pl
 import zarr
-import zarr.storage
 from omegaconf import OmegaConf
-from pyprojroot import here
 from plum import dispatch
-from numpy.typing import NDArray
+from pyprojroot import here
 
 # Register the "here" resolver
 OmegaConf.register_new_resolver("here", lambda: here())
@@ -43,7 +42,7 @@ class Config:
 
 
 @dispatch
-def read_zarr_into_dict(zarr_paths: Dict[str, Path], chunk: str) -> Dict[str, Dict[str, NDArray]]:
+def read_zarr_into_dict(zarr_paths: Dict[str, Path], chunk: str) -> Dict[str, Dict[str, np.ndarray]]:
     """
     Read multiple zarr files into a nested dictionary for a specific chunk.
 

@@ -5,9 +5,6 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10"
 
-
-
-
 dependencies = [
     "bpy>=4.0.0",
     "bvhio>=1.4.6",
@@ -15,7 +12,7 @@ dependencies = [
     "ipywidgets>=8.1.5",
     "jupyterlab>=4.3.4",
     "librosa>=0.10.2.post1",
-    "marimo>=0.10.12",
+    "marimo[sql]>=0.10.12",
     "numpy>=1.26.4",
     "praat-parselmouth>=0.4.5",
     "pysoundfile>=0.9.0.post1",
@@ -47,6 +44,8 @@ dependencies = [
     "ott-jax>=0.5.0",
     "tslearn>=0.6.3",
     "polars>=1.26.0",
+    "duckdb>=1.2.1",
+    "altair[all]>=5.5.0",
 ]
 
 

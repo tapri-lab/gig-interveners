@@ -2,35 +2,34 @@
 
 This module provides functions used to compute synchrony metrics on multivariate time series. It contains the following functions:
 
- * recurrence_matrix - Creates a recurrence matrix from a multivariate time series. 
- * get_diagonal_lengths - Finds the lengths of diagonals in a recurrence matrix. Used by rqa_metrics. 
- * rqa_metrics - Computes the proportion of recurrence, proportion of determinism, average diagonal length and longest diagonal length for an input recurrence matrix. 
+ * recurrence_matrix - Creates a recurrence matrix from a multivariate time series.
+ * get_diagonal_lengths - Finds the lengths of diagonals in a recurrence matrix. Used by rqa_metrics.
+ * rqa_metrics - Computes the proportion of recurrence, proportion of determinism, average diagonal length and longest diagonal length for an input recurrence matrix.
  * rho - A cluster-phase synchrony metric.
  * coherence_team - A synchrony metric based on spectral density.
  * sum_normalized_csd - A synchrony metric based on cross-spectral density, similar to coherence_team().
- * convert_to_terciles - Takes a time series and returns a time series where each value is replaced by a number indicating which tercile it belongs in. Used by pattern_entropy. 
- * symbolic_entropy - A metric based on the entropy of the combined 'state' across a multivariate time series. 
- * kuramoto_weak_null - Tests the significance of the observed Kuramoto order parameter values in a sample of multivariate time series. 
- * metric_fixed_parameters - Provides a copy of a function to calculate a synchrony metric, but with all parameters fixed except the input data. For use with apply_windowed when functions have multiple parameters. 
- * apply_windowed - A function used to apply other functions in a windowed fashion. 
- * shuffle_recordings - Creates surrogate_data by shuffling variables between time series in a sample of multivariate time series. 
- * shuffle_time_windows - Creates surrogate_data by shuffling time windows, separately for each variable of a multivariate time series. 
+ * convert_to_terciles - Takes a time series and returns a time series where each value is replaced by a number indicating which tercile it belongs in. Used by pattern_entropy.
+ * symbolic_entropy - A metric based on the entropy of the combined 'state' across a multivariate time series.
+ * kuramoto_weak_null - Tests the significance of the observed Kuramoto order parameter values in a sample of multivariate time series.
+ * metric_fixed_parameters - Provides a copy of a function to calculate a synchrony metric, but with all parameters fixed except the input data. For use with apply_windowed when functions have multiple parameters.
+ * apply_windowed - A function used to apply other functions in a windowed fashion.
+ * shuffle_recordings - Creates surrogate_data by shuffling variables between time series in a sample of multivariate time series.
+ * shuffle_time_windows - Creates surrogate_data by shuffling time windows, separately for each variable of a multivariate time series.
  * get_driver_scores - Gets 'driver' scores indicating which variables are influential in a multivariate time series. Used by get_sync_index()
  * get_empath_scores - Gets 'empath' scores indicating which variables are most influenced in a multivariate time series. Used by get_sync_index()
- * get_sync_index - A synchrony metric based on how much variables influence one another. 
+ * get_sync_index - A synchrony metric based on how much variables influence one another.
 """
 
-import numpy as np
-import scipy.spatial
-import scipy.signal
-import scipy.stats
 import copy
+
+import numpy as np
+import scipy.signal
+import scipy.spatial
+import scipy.stats
 from sklearn.linear_model import LinearRegression
 
 
-def recurrence_matrix(
-    data, radius, normalise=True, embedding_dimension=None, embedding_delay=None
-):
+def recurrence_matrix(data, radius, normalise=True, embedding_dimension=None, embedding_delay=None):
     """Creates a recurrence matrix from a multivariate time series. The Euclidean distance, combined with the radius parameter, is used to determine which points are close enough to count as 'recurrent'.
 
     Parameters
@@ -53,9 +52,7 @@ def recurrence_matrix(
     """
 
     if normalise:
-        data = (data - data.mean(axis=1).reshape(-1, 1)) / data.std(axis=1).reshape(
-            -1, 1
-        )
+        data = (data - data.mean(axis=1).reshape(-1, 1)) / data.std(axis=1).reshape(-1, 1)
 
     if embedding_dimension and embedding_delay:
         copies = []
@@ -63,9 +60,7 @@ def recurrence_matrix(
         copy_length = data.shape[1] - (embedding_delay * (embedding_dimension - 1))
 
         for i in range(embedding_dimension):
-            copies.append(
-                data[:, i * embedding_delay : copy_length + i * embedding_delay]
-            )
+            copies.append(data[:, i * embedding_delay : copy_length + i * embedding_delay])
 
         data = np.concatenate(copies)
 
@@ -100,16 +95,12 @@ def get_diagonal_lengths(recurrence_matrix):
 
             else:
                 if current_length > 0:
-                    diagonal_length_counts[current_length] = (
-                        diagonal_length_counts.get(current_length, 0) + 1
-                    )
+                    diagonal_length_counts[current_length] = diagonal_length_counts.get(current_length, 0) + 1
 
                 current_length = 0
 
         if current_length > 0:
-            diagonal_length_counts[current_length] = (
-                diagonal_length_counts.get(current_length, 0) + 1
-            )
+            diagonal_length_counts[current_length] = diagonal_length_counts.get(current_length, 0) + 1
 
         return diagonal_length_counts
 
@@ -117,9 +108,7 @@ def get_diagonal_lengths(recurrence_matrix):
         temp_length_counts = get_lengths(np.diag(recurrence_matrix, diagonal))
 
         for length, count in temp_length_counts.items():
-            full_diagonal_length_counts[length] = (
-                full_diagonal_length_counts.get(length, 0) + count
-            )
+            full_diagonal_length_counts[length] = full_diagonal_length_counts.get(length, 0) + count
 
     return full_diagonal_length_counts
 
@@ -160,9 +149,7 @@ def rqa_metrics(recurrence_matrix, min_length=2):
 
             mean_length = rec
 
-        det = (
-            det / rec
-        )  ##Divide by the number of recurrent points (before rec becomes a fraction)
+        det = det / rec  ##Divide by the number of recurrent points (before rec becomes a fraction)
         rec = rec / (
             recurrence_matrix.shape[0] * (recurrence_matrix.shape[1] - 1) / 2
         )  ##The number of off-diagonal cells in the upper triangle
@@ -229,9 +216,7 @@ def coherence_team(data, nperseg=None):
     for i, x in enumerate(data):
         for j, y in enumerate(data):
             if i < j:
-                coherence_scores.append(
-                    scipy.signal.coherence(x, y, nperseg=nperseg)[1].mean()
-                )
+                coherence_scores.append(scipy.signal.coherence(x, y, nperseg=nperseg)[1].mean())
 
     return np.mean(coherence_scores)
 
@@ -264,10 +249,7 @@ def sum_normalized_csd(data):
             if i < j:
                 csd_scores.append(
                     (np.abs(scipy.signal.csd(x, y, nperseg=nperseg)[1]) ** 2).sum()
-                    / (
-                        scipy.signal.csd(x, x, nperseg=nperseg)[1]
-                        * scipy.signal.csd(y, y, nperseg=nperseg)[1]
-                    ).sum()
+                    / (scipy.signal.csd(x, x, nperseg=nperseg)[1] * scipy.signal.csd(y, y, nperseg=nperseg)[1]).sum()
                 )
 
     return np.mean(csd_scores)
@@ -312,13 +294,9 @@ def symbolic_entropy(data):
     """
 
     data_terciles = np.apply_along_axis(convert_to_terciles, 1, data)
-    data_patterns = np.apply_along_axis(
-        lambda x: "".join([str(int(y)) for y in x]), 0, data_terciles
-    )
+    data_patterns = np.apply_along_axis(lambda x: "".join([str(int(y)) for y in x]), 0, data_terciles)
 
-    pattern_probabilities = (
-        np.unique(data_patterns, return_counts=True)[1] / data_patterns.shape[0]
-    )
+    pattern_probabilities = np.unique(data_patterns, return_counts=True)[1] / data_patterns.shape[0]
 
     return -np.sum(pattern_probabilities * np.log(pattern_probabilities))
 
@@ -342,9 +320,9 @@ def kuramoto_weak_null(phases):
     """
 
     ## Check that the number of signals is the same in each time series
-    assert (
-        len(np.unique(list(map(lambda x: x.shape[0], phases)))) == 1
-    ), "The number of signals in each time series must be consistent across the whole sample."
+    assert len(np.unique(list(map(lambda x: x.shape[0], phases)))) == 1, (
+        "The number of signals in each time series must be consistent across the whole sample."
+    )
 
     def y_bar(phases):
         kuramoto_r = np.abs(np.exp(phases * 1j).mean(axis=0))

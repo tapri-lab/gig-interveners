@@ -1,18 +1,17 @@
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, SupportsFloat, Any
+from typing import Any, Dict, List, Optional, SupportsFloat, Tuple
 
 import einops
+import pandas as pd
+import polars as pl
 import synchronization as sync
 from becemd import compute_becemd
+from numpy.typing import NDArray
 from pandas import DataFrame
-
+from pyunicorn.timeseries.cross_recurrence_plot import CrossRecurrencePlot
 from rich.console import Console
 from rich.table import Table
 from rich_tools import table_to_df
-from numpy.typing import NDArray
-from pyunicorn.timeseries.cross_recurrence_plot import CrossRecurrencePlot
-import pandas as pd
-import polars as pl
 
 
 class ResultsTable:
@@ -170,16 +169,18 @@ def beat_consistency(
     person: str,
     chunk: str,
     plot: bool = False,
+    plot_path: Optional[Path] = None,
 ) -> Tuple[List[ResultsTable], Dict[str, float]]:
     table = ResultsTable(title=f"Beat Consistency-{person}-{chunk}")
     if (ps := person.split("_")) and len(ps) > 1:
         table.add_metadata("person1", ps[0])
         table.add_metadata("person2", ps[1])
+        table.add_metadata("chunk", chunk)
     else:
         table.add_metadata("person", person)
         table.add_metadata("chunk", chunk)
 
-    _, res = compute_becemd(bvh_file, str(audio_file), plot=plot)
+    _, res = compute_becemd(bvh_file, str(audio_file), plot=plot, plot_save_path=plot_path)
     for k in res["scores"]:
         table.add_result(k, res["scores"][k])
 

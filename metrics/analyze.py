@@ -1,5 +1,6 @@
 import itertools as it
 from pathlib import Path
+from typing import Dict, List, Tuple
 
 import polars as pl
 import tyro
@@ -9,21 +10,21 @@ from analysis_utils import (
     indiv_joint_level_recurrence,
     merge_results,
 )
-from cmd_utils import Config, load_file_paths, read_zarr_into_dict
+from cmd_utils import Config, RQASettings, load_file_paths, read_zarr_into_dict
 from joblib.parallel import Parallel, delayed
 from omegaconf import OmegaConf
 from pyprojroot import here
 from wasabi import msg
 
 
-def load_config(cfg_path: Path):
+def load_config(cfg_path: Path) -> Config:
     """Load and merge configuration"""
     schema = OmegaConf.structured(Config)
     config = OmegaConf.load(cfg_path)
     return OmegaConf.merge(schema, config)
 
 
-def prepare_analysis_inputs(df):
+def prepare_analysis_inputs(df: pl.DataFrame) -> Tuple[List[str], List[str], List[Tuple[str, str]]]:
     """Prepare inputs for analysis"""
     persons = df["person"].unique().to_list()
     all_chunks = df["chunk_name"].unique().to_list()
@@ -32,7 +33,13 @@ def prepare_analysis_inputs(df):
     return persons, all_chunks, all_pairs
 
 
-def run_indiv_joint_analysis(pll_exec, zarr_paths, person_joint_pairs, all_chunks, rqa_settings) -> pl.DataFrame:
+def run_indiv_joint_analysis(
+    pll_exec: Parallel,
+    zarr_paths: Dict[str, Path],
+    person_joint_pairs: List[Tuple[str, str]],
+    all_chunks: List[str],
+    rqa_settings: RQASettings,
+) -> pl.DataFrame:
     """Run individual joint level recurrence analysis"""
     msg.divider("Self Joint Level Recurrence Analysis")
     indiv_rqa_per_joint = (
@@ -53,7 +60,13 @@ def run_indiv_joint_analysis(pll_exec, zarr_paths, person_joint_pairs, all_chunk
     return indiv_out
 
 
-def run_cross_person_analysis(pll_exec, zarr_paths, all_pairs, all_chunks, rqa_settings) -> pl.DataFrame:
+def run_cross_person_analysis(
+    pll_exec: Parallel,
+    zarr_paths: Dict[str, Path],
+    all_pairs: List[Tuple[str, str]],
+    all_chunks: List[str],
+    rqa_settings: RQASettings,
+) -> pl.DataFrame:
     """Run joint level cross recurrence analysis"""
     msg.divider("Joint Level Cross Recurrence Analysis")
     cross_rqa = (
@@ -75,16 +88,19 @@ def run_cross_person_analysis(pll_exec, zarr_paths, all_pairs, all_chunks, rqa_s
     return cross_out
 
 
-def run_beat_consistency_analysis(pll_exec, df) -> pl.DataFrame:
+def run_beat_consistency_analysis(pll_exec: Parallel, df: pl.DataFrame, output_dir: Path) -> pl.DataFrame:
     """Run beat consistency analysis for individuals"""
     msg.divider("Self Beat Consistency Scores")
+    # Create output directory
+    output_dir.mkdir(parents=True, exist_ok=True)
     bec_tables = (
         delayed(beat_consistency)(
             row["bvh"],
             row["audio"],
             row["person"],
             row["chunk_name"],
-            plot=False,
+            plot=True,
+            plot_path=output_dir / f"{row['person']}_{row['chunk_name']}.pdf",
         )
         for row in df.iter_rows(named=True)
     )
@@ -94,23 +110,31 @@ def run_beat_consistency_analysis(pll_exec, df) -> pl.DataFrame:
     return bec_tables
 
 
-def run_cross_beat_consistency_analysis(pll_exec, df) -> pl.DataFrame:
-    """Run beat consistency analysis across persons"""
+def run_cross_beat_consistency_analysis(pll_exec: Parallel, df: pl.DataFrame, output_dir: Path) -> pl.DataFrame:
+    """Run beat consistency analysis across persons
+    person1 vs person2
+    where the motion used is for person1 and the audio for person2.
+    """
     msg.divider("Beat Consistency Scores Cross Person")
+    # Create a cross join of the dataframe with itself
+    # to get all combinations of person pairs
+    output_dir.mkdir(parents=True, exist_ok=True)
     bec_subset = (
         df.select(["person", "bvh", "audio", "chunk_name"])
         .join(df.select(["person", "bvh", "audio", "chunk_name"]), how="cross")
-        .filter(pl.col("person") != pl.col("person_right"))
-        .select(["person", "person_right", "bvh", "audio_right", "chunk_name"])
-        .unique(subset=["person", "person_right", "chunk_name"])
+        .filter(pl.col("person") != pl.col("person_right"))  # Exclude self-comparisons
+        .select(["person", "person_right", "bvh", "audio_right", "chunk_name"])  # Select relevant columns
+        .unique(subset=["person", "person_right", "chunk_name"])  # Ensure unique pairs per chunk/thin slice
     )
     bec_tables_cross = (
         delayed(beat_consistency)(
             row["bvh"],
             row["audio_right"],
+            # Combine person names for unique identifier, suboptimal for now but will do for now.
             row["person"] + "_" + row["person_right"],
             row["chunk_name"],
-            plot=False,
+            plot=True,
+            plot_path=output_dir / f"{row['person']}_{row['person_right']}_{row['chunk_name']}.pdf",
         )
         for row in bec_subset.iter_rows(named=True)
     )
@@ -126,6 +150,7 @@ def main(cfg_path: Path, n_jobs: int = -1, output_dir: Path = Path(here() / "res
     Args:
         cfg_path: Path to the configuration file.
         n_jobs: Number of parallel jobs to run. Default is -1, which uses all available cores.
+        output_dir: Directory to save the results. Default is "results" in the current directory.
     """
     # Load configuration
     config = load_config(cfg_path)
@@ -154,12 +179,13 @@ def main(cfg_path: Path, n_jobs: int = -1, output_dir: Path = Path(here() / "res
         cross_out.write_parquet(output_dir / "cross_joint_recurrence.parquet")
 
         # Beat consistency analysis
-        bec_tables = run_beat_consistency_analysis(pll_exec, df)
+        bec_tables = run_beat_consistency_analysis(pll_exec, df, output_dir / "bc_plots")
         bec_tables.write_parquet(output_dir / "beat_consistency.parquet")
 
         # Cross beat consistency analysis
-        bec_tables_cross = run_cross_beat_consistency_analysis(pll_exec, df)
+        bec_tables_cross = run_cross_beat_consistency_analysis(pll_exec, df, output_dir / "cross_bc_plots")
         bec_tables_cross.write_parquet(output_dir / "cross_beat_consistency.parquet")
+    return 0
 
 
 if __name__ == "__main__":
