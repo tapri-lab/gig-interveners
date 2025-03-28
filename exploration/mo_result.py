@@ -23,7 +23,9 @@ def _(here, pl):
 
 @app.cell
 def _(df, pl):
-    xs = df.with_columns(pl.col("Value").cast(pl.Float32), pl.col("chunk").cast(pl.Int32))
+    xs = df.with_columns(
+        pl.col("Value").cast(pl.Float32), pl.col("chunk").cast(pl.Int32)
+    )
     xs
     return (xs,)
 
@@ -40,9 +42,13 @@ def _(mo, xs):
 
 @app.cell
 def _(alt, filtered, mo):
-    chart = alt.Chart(filtered).mark_point().encode(
-        x="chunk",
-        y="Value",
+    chart = (
+        alt.Chart(filtered)
+        .mark_point()
+        .encode(
+            x="chunk",
+            y="Value",
+        )
     )
     chart = mo.ui.altair_chart(chart)
     return (chart,)
@@ -57,7 +63,9 @@ def _(chart, mo):
 @app.cell
 def _(here, pl):
     bdf = pl.read_parquet(here() / "results/beat_consistency.parquet")
-    bdf = bdf.with_columns(pl.col("Value").cast(pl.Float32), pl.col("chunk").cast(pl.Int32))
+    bdf = bdf.with_columns(
+        pl.col("Value").cast(pl.Float32), pl.col("chunk").cast(pl.Int32)
+    )
     bdf
     return (bdf,)
 
@@ -74,9 +82,13 @@ def _(bdf, mo):
 
 @app.cell
 def _(alt, bfiltered, mo):
-    chart2 = alt.Chart(bfiltered).mark_bar().encode(
-        x="chunk",
-        y="Value",
+    chart2 = (
+        alt.Chart(bfiltered)
+        .mark_bar()
+        .encode(
+            x="chunk",
+            y="Value",
+        )
     )
     chart2 = mo.ui.altair_chart(chart2)
     return (chart2,)
@@ -91,7 +103,9 @@ def _(chart2, mo):
 @app.cell
 def _(here, pl):
     bcdf = pl.read_parquet(here() / "results/cross_beat_consistency.parquet")
-    bcdf = bcdf.with_columns(pl.col("Value").cast(pl.Float32), pl.col("chunk").cast(pl.Int32))
+    bcdf = bcdf.with_columns(
+        pl.col("Value").cast(pl.Float32), pl.col("chunk").cast(pl.Int32)
+    )
     bcdf
     return (bcdf,)
 
@@ -108,9 +122,13 @@ def _(bcdf, mo):
 
 @app.cell
 def _(alt, bcfiltered, mo):
-    chart3 = alt.Chart(bcfiltered).mark_line().encode(
-        x="chunk",
-        y="Value",
+    chart3 = (
+        alt.Chart(bcfiltered)
+        .mark_line()
+        .encode(
+            x="chunk",
+            y="Value",
+        )
     )
     chart3 = mo.ui.altair_chart(chart3)
     return (chart3,)

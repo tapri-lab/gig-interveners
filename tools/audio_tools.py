@@ -5,8 +5,8 @@ from typing import Optional
 import numpy as np
 import parselmouth
 import soundfile as sf
+from joblib import Parallel, delayed
 from parselmouth.praat import call
-from tqdm.auto import trange
 from tyro.extras import subcommand_cli_from_dict
 
 
@@ -72,24 +72,23 @@ def split_wav_file(
     return output_files
 
 
-def limit_f0_variability(
+def limiter(
     audio_path: Path,
-    output_path: Path,
+    output_dir: Path,
     max_deviation_hz: float = 50.0,
 ) -> parselmouth.Sound:
     """
-    Limit the f0 variability in speech to stay within a max deviation from the mean f0.
+    Limit the pitch of a sound object to a specified range.
 
     Args:
-        audio_path: Path to audio file
-        output_path: Path to save the processed audio
-        max_deviation_hz: Maximum allowed deviation from mean f0 in Hz
+        sound: parselmouth.Sound object
+        min_freq: Minimum frequency in Hz
+        max_freq: Maximum frequency in Hz
     Returns:
-        parselmouth.Sound: Processed sound object
+        parselmouth.Sound: Pitch-limited sound object
     """
-    # Load sound
-    audio_path = Path(audio_path).expanduser()
-    output_path = str(Path(output_path).expanduser())
+    file_name = audio_path.stem
+    output_file = output_dir / f"{file_name}_shifted.wav"
     sound = parselmouth.Sound(str(audio_path))
 
     # Create manipulation object
@@ -106,7 +105,7 @@ def limit_f0_variability(
 
     # Get points and limit their deviation
     num_points = call(pitch_tier, "Get number of points")
-    for i in trange(1, num_points + 1):
+    for i in range(1, num_points + 1):
         time = call(pitch_tier, "Get time from index", i)
         f0 = call(pitch_tier, "Get value at index", i)
 
@@ -120,8 +119,38 @@ def limit_f0_variability(
     # Replace pitch tier and resynthesize
     call([pitch_tier, manipulation], "Replace pitch tier")
     modified_sound = call(manipulation, "Get resynthesis (overlap-add)")
-    modified_sound.save(output_path, "WAV")
+    modified_sound.save(str(output_file), "WAV")
     return modified_sound
+
+
+def limit_f0_variability(
+    audio_path: Path,
+    output_path: Path,
+    max_deviation_hz: float = 50.0,
+    n_jobs: int = -1,
+) -> parselmouth.Sound:
+    """
+    Limit the f0 variability in speech to stay within a max deviation from the mean f0.
+
+    Args:
+        audio_path: Path to audio file
+        output_path: Path to save the processed audio
+        max_deviation_hz: Maximum allowed deviation from mean f0 in Hz
+        n_jobs: Number of parallel jobs to run. Default is -1, which uses all available cores.
+    Returns:
+        parselmouth.Sound: Processed sound object
+    """
+    # Load sound
+    audio_path = Path(audio_path).expanduser()
+    if audio_path.is_dir():
+        audio_path = list(audio_path.glob("*.wav"))
+    else:
+        audio_path = [audio_path]
+    output_path.mkdir(parents=True, exist_ok=True)
+    with Parallel(n_jobs=n_jobs, backend="threading") as pll:
+        modified_sounds = (delayed(limiter)(audio_file, output_path, max_deviation_hz) for audio_file in audio_path)
+        modified_sounds = pll(modified_sounds)
+    return modified_sounds
 
 
 if __name__ == "__main__":
