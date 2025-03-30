@@ -9,8 +9,9 @@ from analysis_utils import (
     cross_person_joint_level_recurrence,
     indiv_joint_level_recurrence,
     merge_results,
+    run_cross_person_sdtw,
 )
-from cmd_utils import Config, RQASettings, load_file_paths, read_zarr_into_dict
+from cmd_utils import Config, RQASettings, SDTWSettings, load_file_paths, read_zarr_into_dict
 from joblib.parallel import Parallel, delayed
 from omegaconf import OmegaConf
 from pyprojroot import here
@@ -144,6 +145,32 @@ def run_cross_beat_consistency_analysis(pll_exec: Parallel, df: pl.DataFrame, ou
     return bec_tables_cross
 
 
+def run_sdtw_analysis(
+    pll_exec: Parallel,
+    zarr_paths: Dict[str, Path],
+    all_pairs: List[Tuple[str, str]],
+    all_chunks: List[str],
+    sdtw_settings: SDTWSettings,
+) -> pl.DataFrame:
+    msg.divider("SDTW Analysis - Cross Person")
+    sdtw_results = (
+        delayed(run_cross_person_sdtw)(
+            read_zarr_into_dict(zarr_paths, chunk),
+            person1,
+            person2,
+            chunk,
+            sdtw_settings.gamma,
+        )
+        for person1, person2 in all_pairs
+        for chunk in all_chunks
+    )
+    sdtw_out = pll_exec(sdtw_results)
+    sdtw_out = [x for xs in sdtw_out for x in xs]
+    sdtw_out = merge_results(sdtw_out)
+    print(sdtw_out.head())
+    return sdtw_out
+
+
 def main(cfg_path: Path, n_jobs: int = -1, output_dir: Path = Path(here() / "results")) -> int:
     """
     Analyze the synchronization metrics.
@@ -168,23 +195,27 @@ def main(cfg_path: Path, n_jobs: int = -1, output_dir: Path = Path(here() / "res
     output_dir.mkdir(exist_ok=True, parents=True)
     msg.info(f"Output directory: {output_dir}")
 
-    # Run analyses in parallel
+    # # Run analyses in parallel
     with Parallel(n_jobs=n_jobs) as pll_exec:
-        # Individual joint analysis
-        indiv_out = run_indiv_joint_analysis(pll_exec, zarr_paths, person_joint_pairs, all_chunks, rqa_settings)
-        indiv_out.write_parquet(output_dir / "indiv_joint_recurrence.parquet")
+        #     # Individual joint analysis
+        #     indiv_out = run_indiv_joint_analysis(pll_exec, zarr_paths, person_joint_pairs, all_chunks, rqa_settings)
+        #     indiv_out.write_parquet(output_dir / "indiv_joint_recurrence.parquet")
+        #
+        #     # Cross-person analysis
+        #     cross_out = run_cross_person_analysis(pll_exec, zarr_paths, all_pairs, all_chunks, rqa_settings)
+        #     cross_out.write_parquet(output_dir / "cross_joint_recurrence.parquet")
+        #
+        #     # Beat consistency analysis
+        #     bec_tables = run_beat_consistency_analysis(pll_exec, df, output_dir / "bc_plots")
+        #     bec_tables.write_parquet(output_dir / "beat_consistency.parquet")
+        #
+        #     # Cross beat consistency analysis
+        #     bec_tables_cross = run_cross_beat_consistency_analysis(pll_exec, df, output_dir / "cross_bc_plots")
+        #     bec_tables_cross.write_parquet(output_dir / "cross_beat_consistency.parquet")
 
-        # Cross-person analysis
-        cross_out = run_cross_person_analysis(pll_exec, zarr_paths, all_pairs, all_chunks, rqa_settings)
-        cross_out.write_parquet(output_dir / "cross_joint_recurrence.parquet")
-
-        # Beat consistency analysis
-        bec_tables = run_beat_consistency_analysis(pll_exec, df, output_dir / "bc_plots")
-        bec_tables.write_parquet(output_dir / "beat_consistency.parquet")
-
-        # Cross beat consistency analysis
-        bec_tables_cross = run_cross_beat_consistency_analysis(pll_exec, df, output_dir / "cross_bc_plots")
-        bec_tables_cross.write_parquet(output_dir / "cross_beat_consistency.parquet")
+        # SDTW analysis
+        sdtw_out = run_sdtw_analysis(pll_exec, zarr_paths, all_pairs, all_chunks, config.sdtw_settings)
+        sdtw_out.write_parquet(output_dir / "sdtw_results.parquet")
     return 0
 
 

@@ -2,16 +2,19 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, SupportsFloat, Tuple
 
 import einops
+import jax
 import pandas as pd
 import polars as pl
 import synchronization as sync
 from becemd import compute_becemd
 from numpy.typing import NDArray
+from ott.geometry.costs import SoftDTW
 from pandas import DataFrame
 from pyunicorn.timeseries.cross_recurrence_plot import CrossRecurrencePlot
 from rich.console import Console
 from rich.table import Table
 from rich_tools import table_to_df
+from sta import sdtw
 
 
 class ResultsTable:
@@ -185,3 +188,29 @@ def beat_consistency(
         table.add_result(k, res["scores"][k])
 
     return table
+
+
+def run_cross_person_sdtw(
+    joint_data: Dict[str, Dict[str, NDArray]],
+    person1: str,
+    person2: str,
+    chunk: str,
+    gamma: float = 0.01,
+) -> List[ResultsTable]:
+    persons = list(joint_data.keys())
+    joints = list(joint_data[persons[0]].keys())
+    results = []
+    s = jax.jit(SoftDTW(gamma=0.1))
+    for joint in joints:
+        res_table = ResultsTable(title=f"{person1} vs {person2}-{joint}-{chunk}")
+        res_table.add_metadata("person1", person1)
+        res_table.add_metadata("person2", person2)
+        res_table.add_metadata("joint", joint)
+        res_table.add_metadata("chunk", chunk)
+        pj1 = joint_data[person1][joint]
+        pj2 = joint_data[person2][joint]
+
+        dist = sdtw(s, pj1, pj2, gamma=gamma)
+        res_table.add_result("Distance", dist)
+        results.append(res_table)
+    return results

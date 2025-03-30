@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.11.26"
+__generated_with = "0.11.31"
 app = marimo.App(width="medium")
 
 
@@ -109,13 +109,13 @@ def _(xs):
 
 @app.cell
 def _(SoftDTW):
-    sdtw = SoftDTW(gamma=0.1)
+    sdtw = SoftDTW(gamma=0.2)
     return (sdtw,)
 
 
 @app.cell
-def _(sdtw, x, y):
-    sdtw(x, y)
+def _(jax, sdtw, x, y):
+    sdtw(x, y), jax.jit(sdtw)
     return
 
 
