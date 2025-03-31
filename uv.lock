@@ -2020,7 +2020,7 @@ wheels = [
 
 [[package]]
 name = "marimo"
-version = "0.11.31"
+version = "0.12.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
@@ -2042,9 +2042,9 @@ dependencies = [
     { name = "uvicorn" },
     { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d9/21/ad93a1a8e77b721af492b4e43526e5a9b5decbfb1ae56748db9616072a8a/marimo-0.11.31.tar.gz", hash = "sha256:b795ad634db7e64026bfcaa6fd22bdbacc0407a497f3a1e8172f332ce82e8ed4", size = 10696643 }
+sdist = { url = "https://files.pythonhosted.org/packages/26/0d/5008594896a99616e66a93cc8cd3bad7f66867baa0d21844830c864fbca5/marimo-0.12.0.tar.gz", hash = "sha256:7192b4678a4df2861d06f25de4979200c75ec621781ff7d5223edb54ba795b0f", size = 10699945 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/4b/8a/fa6e39775351f377f495b96c50ed74eabfad8fe7c5f85e0af40b4f7af82c/marimo-0.11.31-py3-none-any.whl", hash = "sha256:96d731ddc2e952432927a1dc00535dbbe3ee136bd22c4655a17a710e51a30ef5", size = 11047731 },
+    { url = "https://files.pythonhosted.org/packages/e5/09/63df9e68dc86c9d1d5d8eceebcdc31382f8efc0ec9ea1fb8e64106933953/marimo-0.12.0-py3-none-any.whl", hash = "sha256:dca788c49c049662c1e561e913418c9be579cd665731fd275c8bb755a255963e", size = 11055259 },
 ]
 
 [package.optional-dependencies]
@@ -2375,11 +2375,11 @@ wheels = [
 
 [[package]]
 name = "narwhals"
-version = "1.32.0"
+version = "1.33.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/c1/e5/aa97891440bf6bc4239e9b918d89fea58eb87dff1d8d14a69b45ef677e66/narwhals-1.32.0.tar.gz", hash = "sha256:bd0aa41434737adb4b26f8593f3559abc7d938730ece010fe727b58bc363580d", size = 258915 }
+sdist = { url = "https://files.pythonhosted.org/packages/85/fd/484aa8bb557f97a1781f38c78b79f795a2fa320e4165c4230f679937d1e8/narwhals-1.33.0.tar.gz", hash = "sha256:6233d2457debf4b5fe4a1da54530c6fe2d84326f4a8e3bca35bbbff580a347cb", size = 262554 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e9/96/79a6168dc7a5098066e097c01a45d01608c8df6552dfb92a2676ce623186/narwhals-1.32.0-py3-none-any.whl", hash = "sha256:8bdbf3f76155887412eea04b0b06303856ac1aa3d9e8bda5b5e54612855fa560", size = 320073 },
+    { url = "https://files.pythonhosted.org/packages/41/c1/e9bc6b67c774e7c1f939c91ea535f18f7644fedc61b20d6baa861ad52b34/narwhals-1.33.0-py3-none-any.whl", hash = "sha256:f653319112fd121a1f1c18a40cf70dada773cdacfd53e62c2aa0afae43c17129", size = 322750 },
 ]
 
 [[package]]
@@ -4004,11 +4004,11 @@ wheels = [
 
 [[package]]
 name = "sqlglot"
-version = "26.12.0"
+version = "26.12.1"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/39/01/618e0a930c788fcd6bbd1fc3a9a86beb7081ff636ccf139696e78e80e3b7/sqlglot-26.12.0.tar.gz", hash = "sha256:214bcc62d80ad51a3fff0b41bd4ca91d66c7d3e6e50be98ce9bf1615d3685722", size = 5339903 }
+sdist = { url = "https://files.pythonhosted.org/packages/b5/71/d8d2954f4c1171c15dcbdd7db3fe99f8455aa536b6c32102f775d421bb54/sqlglot-26.12.1.tar.gz", hash = "sha256:ee67df004208650056d81cd2ed70fc7cc9c4a0711049b596db4a47e949c9a0bf", size = 5341371 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/af/55/3a0e0e4db3c12dd87ed869ebd38ed1b582d42f2fa072cd1a5e7b534ac6e0/sqlglot-26.12.0-py3-none-any.whl", hash = "sha256:140c26f8f2e3b230e36da1d44f164f9c3982314f6de85a2b3b8eb0f590ad7d81", size = 454668 },
+    { url = "https://files.pythonhosted.org/packages/eb/03/709d522bcde0d8303cdf8e5c9886ce64bf0ad9c5900de2b949cbaa48f7ce/sqlglot-26.12.1-py3-none-any.whl", hash = "sha256:46c3b55c914310240f576ccb5ee652df36f18ec1553ac7174f409e291224cf55", size = 454678 },
 ]
 
 [[package]]

@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -39,6 +39,9 @@ class Config:
     rqa_settings: RQASettings
     emd_settings: EMDSettings
     sdtw_settings: SDTWSettings
+    metrics_to_run: List[str] = field(
+        default_factory=lambda: ["indiv_rqa", "crqa", "beat_consistency", "sdtw", "cross_beat_consistency"]
+    )
 
 
 @dispatch

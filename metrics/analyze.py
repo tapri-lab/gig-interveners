@@ -197,25 +197,30 @@ def main(cfg_path: Path, n_jobs: int = -1, output_dir: Path = Path(here() / "res
 
     # # Run analyses in parallel
     with Parallel(n_jobs=n_jobs) as pll_exec:
-        #     # Individual joint analysis
-        #     indiv_out = run_indiv_joint_analysis(pll_exec, zarr_paths, person_joint_pairs, all_chunks, rqa_settings)
-        #     indiv_out.write_parquet(output_dir / "indiv_joint_recurrence.parquet")
-        #
-        #     # Cross-person analysis
-        #     cross_out = run_cross_person_analysis(pll_exec, zarr_paths, all_pairs, all_chunks, rqa_settings)
-        #     cross_out.write_parquet(output_dir / "cross_joint_recurrence.parquet")
-        #
-        #     # Beat consistency analysis
-        #     bec_tables = run_beat_consistency_analysis(pll_exec, df, output_dir / "bc_plots")
-        #     bec_tables.write_parquet(output_dir / "beat_consistency.parquet")
-        #
-        #     # Cross beat consistency analysis
-        #     bec_tables_cross = run_cross_beat_consistency_analysis(pll_exec, df, output_dir / "cross_bc_plots")
-        #     bec_tables_cross.write_parquet(output_dir / "cross_beat_consistency.parquet")
+        # Individual joint analysis
+        if "indiv_rqa" in config.metrics_to_run:
+            indiv_out = run_indiv_joint_analysis(pll_exec, zarr_paths, person_joint_pairs, all_chunks, rqa_settings)
+            indiv_out.write_parquet(output_dir / "indiv_joint_recurrence.parquet")
+
+        # Cross-person analysis
+        if "crqa" in config.metrics_to_run:
+            cross_out = run_cross_person_analysis(pll_exec, zarr_paths, all_pairs, all_chunks, rqa_settings)
+            cross_out.write_parquet(output_dir / "cross_joint_recurrence.parquet")
+
+        # Beat consistency analysis
+        if "beat_consistency" in config.metrics_to_run:
+            bec_tables = run_beat_consistency_analysis(pll_exec, df, output_dir / "bc_plots")
+            bec_tables.write_parquet(output_dir / "beat_consistency.parquet")
+
+        # Cross beat consistency analysis
+        if "cross_beat_consistency" in config.metrics_to_run:
+            bec_tables_cross = run_cross_beat_consistency_analysis(pll_exec, df, output_dir / "cross_bc_plots")
+            bec_tables_cross.write_parquet(output_dir / "cross_beat_consistency.parquet")
 
         # SDTW analysis
-        sdtw_out = run_sdtw_analysis(pll_exec, zarr_paths, all_pairs, all_chunks, config.sdtw_settings)
-        sdtw_out.write_parquet(output_dir / "sdtw_results.parquet")
+        if "sdtw" in config.metrics_to_run:
+            sdtw_out = run_sdtw_analysis(pll_exec, zarr_paths, all_pairs, all_chunks, config.sdtw_settings)
+            sdtw_out.write_parquet(output_dir / "sdtw_results.parquet")
     return 0
 
 

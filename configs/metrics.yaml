@@ -1,4 +1,7 @@
 base_data_path: "/home/ojas/data/dnd/Session_1/"
+metrics_to_run:
+  - beat_consistency
+  - sdtw
 bvh_audio_folder_paths:
   person1:
     bvh: "${base_data_path}/a/a_chunks/"
