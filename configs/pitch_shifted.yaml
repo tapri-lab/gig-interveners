@@ -1,0 +1,38 @@
+base_data_path: "/home/ojas/data/dnd/Session_1/"
+metrics_to_run:
+  - beat_consistency
+  - sdtw
+  - cross_beat_consistency
+bvh_audio_folder_paths:
+  person1:
+    bvh: "${base_data_path}/a/a_chunks/"
+    zarr: "${base_data_path}/a/a_world_pos.zip"
+    audio: "${base_data_path}/a/shift_50Hz/"
+  person2:
+    bvh: "${base_data_path}/c/c_chunks/"
+    zarr: "${base_data_path}/c/c_world_pos.zip"
+    audio: "${base_data_path}/c/shift_50Hz/"
+  person3:
+    bvh: "${base_data_path}/b/b_chunks/"
+    zarr: "${base_data_path}/b/b_world_pos.zip"
+    audio: "${base_data_path}/b/shift_50Hz/"
+  person4:
+    bvh: "${base_data_path}/j/j_chunks/"
+    zarr: "${base_data_path}/j/j_world_pos.zip"
+    audio: "${base_data_path}/j/shift_50Hz/"
+rqa_settings:
+  threshold: 0.5
+  recurrence_rate: 0.02
+  indiv_joints:
+    - LeftHand
+    - RightHand
+    - LeftArm
+    - RightArm
+  joint_pair_rec:
+    - [ LeftHand, RightHand ]
+    - [ LeftArm, RightArm ]
+emd_settings:
+  cross_person: true
+
+sdtw_settings:
+  cross_person: true
