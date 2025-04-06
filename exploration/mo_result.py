@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.11.30"
+__generated_with = "0.12.4"
 app = marimo.App(width="medium")
 
 
@@ -12,29 +12,39 @@ def _():
     import seaborn as sns
     from pyprojroot import here
     import altair as alt
-    return alt, here, mo, pl, plt, sns
+    import pandas as pd
+    return alt, here, mo, pd, pl, plt, sns
 
 
 @app.cell
-def _(here, pl):
-    df = pl.read_parquet(here() / "results/indiv_joint_recurrence.parquet")
-    return (df,)
+def _(alt):
+    alt.theme.enable('ggplot2')
+    return
 
 
 @app.cell
-def _(df, pl):
-    xs = df.with_columns(
+def _(here):
+    results_base = here() / "results_base"
+    motion_damped = here() / "results_dampened"
+    pitch_shifted = here() / "results_pitch_shift"
+    return motion_damped, pitch_shifted, results_base
+
+
+@app.cell
+def _(pl, results_base):
+    ijr = pl.read_parquet(results_base / "indiv_joint_recurrence.parquet")
+    ijr = ijr.with_columns(
         pl.col("Value").cast(pl.Float32), pl.col("chunk").cast(pl.Int32)
     )
-    xs
-    return (xs,)
+    ijr
+    return (ijr,)
 
 
 @app.cell
-def _(mo, xs):
+def _(ijr, mo):
     filtered = mo.sql(
         f"""
-        SELECT * FROM xs where person == 'person1' and joint == 'LeftHand' and Metric == 'Recurrence Rate'
+        SELECT * FROM ijr where joint == 'LeftHand' and Metric == 'Recurrence Rate'
         """
     )
     return (filtered,)
@@ -44,10 +54,14 @@ def _(mo, xs):
 def _(alt, filtered, mo):
     chart = (
         alt.Chart(filtered)
-        .mark_point()
+        .mark_boxplot()
         .encode(
-            x="chunk",
+            x="person",
             y="Value",
+            color="person:N"
+        )
+        .properties(
+            title="Recurrence Rate"
         )
     )
     chart = mo.ui.altair_chart(chart)
@@ -55,14 +69,8 @@ def _(alt, filtered, mo):
 
 
 @app.cell
-def _(chart, mo):
-    mo.vstack([chart, chart.value.head()])
-    return
-
-
-@app.cell
-def _(here, pl):
-    bdf = pl.read_parquet(here() / "results/beat_consistency.parquet")
+def _(pl, results_base):
+    bdf = pl.read_parquet(results_base / "beat_consistency.parquet")
     bdf = bdf.with_columns(
         pl.col("Value").cast(pl.Float32), pl.col("chunk").cast(pl.Int32)
     )
@@ -74,7 +82,7 @@ def _(here, pl):
 def _(bdf, mo):
     bfiltered = mo.sql(
         f"""
-        select * from bdf where metric == 'raw_vs_imf1' and person == 'person1'
+        select * from bdf where metric == 'imf1_vs_imf2'
         """
     )
     return (bfiltered,)
@@ -84,10 +92,13 @@ def _(bdf, mo):
 def _(alt, bfiltered, mo):
     chart2 = (
         alt.Chart(bfiltered)
-        .mark_bar()
+        .mark_boxplot()
         .encode(
-            x="chunk",
-            y="Value",
+            x="person:N",
+            y="Value:Q",
+            color="person:N"
+        ).properties(
+            title="Beat Consistency"
         )
     )
     chart2 = mo.ui.altair_chart(chart2)
@@ -95,14 +106,14 @@ def _(alt, bfiltered, mo):
 
 
 @app.cell
-def _(chart2, mo):
-    mo.vstack([chart2, chart2.value.head()])
+def _(chart, chart2, mo):
+    mo.vstack([chart, chart2])
     return
 
 
 @app.cell
 def _(here, pl):
-    bcdf = pl.read_parquet(here() / "results/cross_beat_consistency.parquet")
+    bcdf = pl.read_parquet(here() / "results_base/cross_beat_consistency.parquet")
     bcdf = bcdf.with_columns(
         pl.col("Value").cast(pl.Float32), pl.col("chunk").cast(pl.Int32)
     )

@@ -7,13 +7,14 @@ import numpy as np
 import yaml
 import zarr
 import zarr.storage
+from joblib import Parallel, delayed
 from scipy.signal import savgol_filter
 from tqdm.auto import tqdm, trange
 from tyro.extras import subcommand_cli_from_dict
 from wasabi import msg
 
 
-def dampen_multiple_joints(file_path: Path, joint_params: Dict, output_path: Optional[Path] = None):
+def dampen_multiple_joints(file_path: Path, joint_params: Dict, output_dir: Optional[Path] = None):
     """
     Dampen the motion of multiple joints in a BVH file using Savitzky-Golay filter.
     Args:
@@ -22,11 +23,12 @@ def dampen_multiple_joints(file_path: Path, joint_params: Dict, output_path: Opt
             Each value should be a dictionary with the following keys:
             - damping_factor: The factor by which the smoothed position is mixed with the original position.
             - window_size: The length of the filter window (must be an odd integer).
-        output_path: Path to save the output BVH file. If not provided, the input file will be overwritten.
+        output_dir: Path to save the output BVH file.
     """
     root = bvhio.readAsHierarchy(file_path)
     frame_range = root.getKeyframeRange()[1] + 1
     print(f"Analyzing {frame_range} frames")
+    msg.info(f"File: {file_path}")
 
     for joint_name, params in joint_params.items():
         target_joint = root.filter(joint_name)[0]
@@ -75,8 +77,7 @@ def dampen_multiple_joints(file_path: Path, joint_params: Dict, output_path: Opt
         max_diff = max(glm.length(p1 - p2) for p1, p2 in zip(original_positions, smoothed_positions))
         print(f"\nMaximum position difference in first 5 frames: {max_diff}")
 
-    output_path = output_path or file_path
-    bvhio.writeHierarchy(output_path, root, 1 / 30)
+    bvhio.writeHierarchy(output_dir / f"{file_path.stem}.bvh", root, 1 / 30)
 
 
 def extract_world_positions(folder: Path, joint_names: List[str], output_path: Optional[Path] = None):
@@ -131,25 +132,36 @@ def extract_world_positions(folder: Path, joint_names: List[str], output_path: O
     return persons
 
 
-def main(input_path: Path, config_path: Path, output_path: Optional[Path] = None):
+def dampener(input_path: Path, config_path: Path, output_path: Path, n_jobs: int = -1):
     """
     Dampen the motion of multiple joints in a BVH file using Savitzky-Golay filter.
     Args:
-        input_path: Path to the input BVH file.
+        input_path: Path to the input BVH file or folder with BVH files.
         config_path: Path to the YAML configuration file.
-        output_path: Path to save the output BVH file. If not provided, the input file will be overwritten.
+        output_path: Path to save the output BVH file.
+        n_jobs: Number of parallel jobs to run. Default is -1, which uses all available cores.
     """
     cfg = yaml.load(config_path.read_text(), Loader=yaml.Loader)
     msg.info(f"Loaded config from {config_path}")
     msg.divider("Config")
     print(cfg)
-    dampen_multiple_joints(input_path, cfg["joint_params"], output_path)
+    msg.info("Creating output directory")
+    output_path.mkdir(parents=True, exist_ok=True)
+    if input_path.is_dir():
+        files = input_path.rglob("*.bvh")
+    else:
+        files = [input_path]
+
+    with Parallel(n_jobs=n_jobs) as pll_exec:
+        _ = pll_exec(
+            delayed(dampen_multiple_joints)(file_path, cfg["joint_params"], output_path) for file_path in files
+        )
 
 
 if __name__ == "__main__":
     subcommand_cli_from_dict(
         dict(
-            dampen=main,
+            dampen=dampener,
             extract=extract_world_positions,
         )
     )
