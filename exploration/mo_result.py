@@ -31,28 +31,39 @@ def _(here):
 
 
 @app.cell
-def _(pl, results_base):
-    ijr = pl.read_parquet(results_base / "indiv_joint_recurrence.parquet")
-    ijr = ijr.with_columns(
+def _(motion_damped, pl, results_base):
+    ijr_base = pl.read_parquet(results_base / "indiv_joint_recurrence.parquet")
+    ijr_int = pl.read_parquet(motion_damped / "indiv_joint_recurrence.parquet")
+    out = map(lambda x: x.with_columns(
         pl.col("Value").cast(pl.Float32), pl.col("chunk").cast(pl.Int32)
-    )
-    ijr
-    return (ijr,)
+    ), [ijr_base, ijr_int])
+    ijr_base, ijr_int = list(out)
+    return ijr_base, ijr_int, out
 
 
 @app.cell
-def _(ijr, mo):
+def _(ijr_base, mo):
     filtered = mo.sql(
         f"""
-        SELECT * FROM ijr where joint == 'LeftHand' and Metric == 'Recurrence Rate'
+        SELECT * FROM ijr_base where joint == 'LeftHand' and Metric == 'Recurrence Rate'
         """
     )
     return (filtered,)
 
 
 @app.cell
-def _(alt, filtered, mo):
-    chart = (
+def _(ijr_int, mo):
+    _df = mo.sql(
+        f"""
+        SELECT * FROM ijr_int where joint == 'LeftHand' and Metric == 'Recurrence Rate'
+        """
+    )
+    return
+
+
+@app.cell
+def _(alt, chart, filtered, mo):
+    chart_base = (
         alt.Chart(filtered)
         .mark_boxplot()
         .encode(
@@ -65,7 +76,7 @@ def _(alt, filtered, mo):
         )
     )
     chart = mo.ui.altair_chart(chart)
-    return (chart,)
+    return chart, chart_base
 
 
 @app.cell
@@ -112,42 +123,7 @@ def _(chart, chart2, mo):
 
 
 @app.cell
-def _(here, pl):
-    bcdf = pl.read_parquet(here() / "results_base/cross_beat_consistency.parquet")
-    bcdf = bcdf.with_columns(
-        pl.col("Value").cast(pl.Float32), pl.col("chunk").cast(pl.Int32)
-    )
-    bcdf
-    return (bcdf,)
-
-
-@app.cell
-def _(bcdf, mo):
-    bcfiltered = mo.sql(
-        f"""
-        select * from bcdf where metric == 'raw_vs_imf1' and person1 == 'person1'
-        """
-    )
-    return (bcfiltered,)
-
-
-@app.cell
-def _(alt, bcfiltered, mo):
-    chart3 = (
-        alt.Chart(bcfiltered)
-        .mark_line()
-        .encode(
-            x="chunk",
-            y="Value",
-        )
-    )
-    chart3 = mo.ui.altair_chart(chart3)
-    return (chart3,)
-
-
-@app.cell
-def _(chart3):
-    chart3
+def _():
     return
 
 
