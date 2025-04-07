@@ -46,6 +46,7 @@ dependencies = [
     "polars>=1.26.0",
     "duckdb>=1.2.1",
     "altair[all]>=5.5.0",
+    "jax-metal>=0.1.1; sys_platform == 'darwin'",
 ]
 
 
