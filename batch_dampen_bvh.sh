@@ -23,7 +23,7 @@ for LABEL in "${LABELS[@]}"; do
 
   echo "Processing $LABEL with $N_JOBS jobs..."
   uv run tools/bvh_tools.py dampen \
-    --input_path "$INPUT_PATH" \
+    --input-path "$INPUT_PATH" \
     --config-path "$CONFIG_PATH" \
     --output-path "$OUTPUT_PATH" \
     --n_jobs "$N_JOBS"
