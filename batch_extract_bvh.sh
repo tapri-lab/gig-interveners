@@ -1,23 +1,24 @@
 #!/bin/bash
 
 # Usage:
-# ./batch_extract_bvh.sh <output_suffix>
+# ./batch_extract_bvh.sh <input_folder_suffix> <output_suffix>
 # Example:
-# ./batch_extract_bvh.sh world_pos.zip
+# ./batch_extract_bvh.sh l_chunks world_pos.zip
 
-# Check that suffix was provided
-if [ -z "$1" ]; then
-  echo "Usage: $0 <output_suffix>"
+# Check that both arguments are provided
+if [ $# -ne 2 ]; then
+  echo "Usage: $0 <input_folder_suffix> <output_suffix>"
   exit 1
 fi
 
-OUTPUT_SUFFIX="$1"
+INPUT_SUFFIX="$1"
+OUTPUT_SUFFIX="$2"
 BASE_FOLDER=~/data/dnd/Session_1
 LABELS=("a" "b" "c" "j" "l")
 JOINT_NAMES=("LeftHand" "LeftArm" "RightHand" "RightArm")
 
 for LABEL in "${LABELS[@]}"; do
-  INPUT_FOLDER="${BASE_FOLDER}/${LABEL}/${LABEL}_chunks"
+  INPUT_FOLDER="${BASE_FOLDER}/${LABEL}/${INPUT_SUFFIX}"
   OUTPUT_PATH="${BASE_FOLDER}/${LABEL}/${LABEL}_${OUTPUT_SUFFIX}"
 
   echo "Processing $LABEL..."
