@@ -18,7 +18,7 @@ LABELS=("a" "b" "c" "j" "l")
 JOINT_NAMES=("LeftHand" "LeftArm" "RightHand" "RightArm")
 
 for LABEL in "${LABELS[@]}"; do
-  INPUT_FOLDER="${BASE_FOLDER}/${LABEL}/${INPUT_SUFFIX}"
+  INPUT_FOLDER="${BASE_FOLDER}/${LABEL}/${LABEL}_${INPUT_SUFFIX}"
   OUTPUT_PATH="${BASE_FOLDER}/${LABEL}/${LABEL}_${OUTPUT_SUFFIX}"
 
   echo "Processing $LABEL..."
