@@ -18,7 +18,13 @@ def _():
     import numpy as np
     import matplotlib.pyplot as plt
     from typing import Optional
+    from scipy.ndimage import gaussian_filter1d
+    from pymotion.io.bvh import BVH
+    import pymotion.rotations.quat as quat
+    from pymotion.ops.skeleton import fk
+    from tqdm.auto import tqdm, trange
     return (
+        BVH,
         Dict,
         List,
         Optional,
@@ -26,238 +32,201 @@ def _():
         Union,
         bvhio,
         deepcopy,
+        fk,
+        gaussian_filter1d,
         glm,
         here,
         mo,
         np,
         plt,
+        quat,
         savgol_filter,
+        tqdm,
+        trange,
     )
 
 
 @app.cell
-def _(Path, bvhio):
-    bvh_path = Path("~/data/dnd/Session_1/c/c_chunks/c_chunk001.bvh").expanduser()
-    root = bvhio.readAsHierarchy(bvh_path).loadPose(100)
-    return bvh_path, root
+def _(Path, here):
+    bvh_path = Path("~/projects/data/Session_1/c/c_chunks/c_chunk001.bvh").expanduser()
+    out_path = here() / "samples" / "delayed.bvh"
+    return bvh_path, out_path
 
 
 @app.cell
-def _(root):
-    root.printTree()
+def _(BVH, gaussian_filter1d, np, quat):
+    def dampen_joint_motion(input_bvh_path, output_bvh_path, joint_name, sigma=3):
+        """
+        Load a BVH file, dampen the motion of a specific joint, and save the modified animation.
+
+        Parameters:
+        - input_bvh_path (str): Path to the input BVH file.
+        - output_bvh_path (str): Path to save the modified BVH file.
+        - joint_name (str): Name of the joint to dampen.
+        - damping_factor (float): Factor to scale the joint rotation. 1.0 = no change, 0.0 = no motion.
+        """
+        bvh = BVH()
+        bvh.load(input_bvh_path)
+
+        # Extract data
+        local_rotations, local_positions, parents, offsets, end_sites, end_sites_parents = bvh.get_data()
+
+        # Find index of the joint
+        joint_index = bvh.data["names"].tolist().index(joint_name)
+
+        # Convert quaternion to scaled axis, scale, then back to quaternion
+        axis_angles = quat.to_scaled_angle_axis(local_rotations[:, joint_index])
+        # scaled_axis *= damping_factor
+        # dampened_quats = quat.from_scaled_angle_axis(scaled_axis)
+        smoothed = np.stack([gaussian_filter1d(axis_angles[:, i], sigma=sigma) for i in range(3)], axis=-1)
+
+        # Convert back to quaternion
+        smoothed_quat = quat.from_scaled_angle_axis(smoothed)
+
+        # Replace original joint's rotations
+        local_rotations[:, joint_index] = smoothed_quat
+
+        # Set modified data back and save
+        bvh.set_data(local_rotations, local_positions)
+        bvh.save(output_bvh_path)
+
+        print(f"Dampened joint '{joint_name}' by factor {sigma}. Saved to: {output_bvh_path}")
+    return (dampen_joint_motion,)
+
+
+@app.cell
+def _(bvh_path, dampen_joint_motion, out_path):
+    dampen_joint_motion(bvh_path, out_path, "RightArm", 20)
+    dampen_joint_motion(out_path, out_path, "RightForeArm", 20)
     return
 
 
 @app.cell
-def _(root):
-    joint = root.filter("LeftHand")[0]
-    return (joint,)
-
-
-@app.cell
-def _(bvhio, joint):
-    bvhio.Euler.fromQuatTo(joint.getKeyframe(100).RotationWorld)
+def _(bvh_path, out_path, plot_joint_positions_comparison):
+    plot_joint_positions_comparison(bvh_path, out_path, "RightHand")
     return
 
 
 @app.cell
-def _(joint):
-    frame_range = joint.getKeyframeRange()
-    return (frame_range,)
-
-
-@app.cell
-def _(frame_range):
-    total_frames = frame_range[1] + 1
-    total_frames
-    return (total_frames,)
-
-
-@app.cell
-def _(bvhio, glm, np, savgol_filter):
-    def dampen_multiple_joints(file_path: str, joint_params: dict, output_path: str = None):
-        root = bvhio.readAsHierarchy(file_path)
-        frame_range = root.getKeyframeRange()[1] + 1
-        print(f"Analyzing {frame_range} frames")
-
-        for joint_name, params in joint_params.items():
-            target_joint = root.filter(joint_name)[0]
-            damping_factor = params.get("damping_factor", 0.5)
-            window_size = params.get("window_size", 15)
-
-            print(f"\nProcessing {joint_name}")
-            print("Sample of original local positions:")
-
-            positions = []
-            original_positions = []
-            for frame in range(frame_range):
-                target_joint.loadPose(frame)
-                pos = target_joint.Position
-                positions.append([pos.x, pos.y, pos.z])
-                if frame < 5:
-                    print(f"Frame {frame}: {pos}")
-                    original_positions.append(pos)
-
-            positions = np.array(positions)
-
-            # Apply Savitzky-Golay filter to local positions
-            smoothed_x = savgol_filter(positions[:, 0], window_size, 3)
-            smoothed_y = savgol_filter(positions[:, 1], window_size, 3)
-            smoothed_z = savgol_filter(positions[:, 2], window_size, 3)
-
-            print("\nSample of smoothed local positions:")
-            smoothed_positions = []
-
-            for frame in range(frame_range):
-                original = glm.vec3(positions[frame])
-                smoothed = glm.vec3(smoothed_x[frame], smoothed_y[frame], smoothed_z[frame])
-                final_pos = glm.mix(original, smoothed, damping_factor)
-
-                if frame < 5:
-                    print(f"Frame {frame}: {final_pos}")
-                    smoothed_positions.append(final_pos)
-
-                new_transform = bvhio.Transform()
-                new_transform.Position = final_pos
-                new_transform.Rotation = target_joint.getKeyframe(frame).Rotation
-                new_transform.Scale = target_joint.getKeyframe(frame).Scale
-
-                target_joint.setKeyframe(frame, new_transform)
-
-            max_diff = max(glm.length(p1 - p2) for p1, p2 in zip(original_positions, smoothed_positions))
-            print(f"\nMaximum position difference in first 5 frames: {max_diff}")
-
-        bvhio.writeHierarchy(output_path, root, 1 / 30)
-    return (dampen_multiple_joints,)
-
-
-@app.cell
-def _():
-    joint_params = {
-        "RightHand": {"damping_factor": 0.8, "window_size": 51},
-        "RightArm": {"damping_factor": 0.8, "window_size": 51},
-        "RightForeArm": {"damping_factor": 0.8, "window_size": 51},
-    }
-    return (joint_params,)
-
-
-@app.cell
-def _(bvh_path, dampen_multiple_joints, here, joint_params):
-    dampen_multiple_joints(
-        bvh_path,
-        joint_params,
-        output_path=here() / "samples" / "delayed.bvh",
-    )
+def _(bvh_path, out_path, plot_joint_rotation_comparison):
+    plot_joint_rotation_comparison(bvh_path, out_path, "LeftHand")
     return
 
 
-@app.cell
-def _(Path, bvhio, np, plt):
-    def plot_joint_trajectory(bvh_path: Path, joint_name: str, label: str, color: str):
-        root = bvhio.readAsHierarchy(bvh_path)
-        frame_range = root.getKeyframeRange()[1] + 1
-        positions = []
+@app.cell(hide_code=True)
+def _(BVH, fk, np, plt, quat):
+    def plot_joint_positions_comparison(bvh_path_1, bvh_path_2, joint_name):
+        bvh1 = BVH()
+        bvh1.load(bvh_path_1)
 
-        for frame in range(frame_range):
-            root.loadPose(frame, recursive=True)
-            joint = root.filter(joint_name)[0]
-            pos = joint.PositionWorld
-            positions.append([pos.x, pos.y, pos.z])
+        bvh2 = BVH()
+        bvh2.load(bvh_path_2)
 
-        positions = np.array(positions)
-        plt.plot(positions[:, 0], label=f"{label} - X", linestyle='--', color=color)
-        plt.plot(positions[:, 1], label=f"{label} - Y", linestyle='-', color=color)
-        plt.plot(positions[:, 2], label=f"{label} - Z", linestyle=':', color=color)
+        joint_index = bvh1.data["names"].tolist().index(joint_name)
+
+        # FK to get global positions
+        lr1, lp1, parents1, offsets1, *_ = bvh1.get_data()
+        pos1, _ = fk(lr1, lp1[:, 0, :], offsets1, parents1)
+
+        lr2, lp2, parents2, offsets2, *_ = bvh2.get_data()
+        pos2, _ = fk(lr2, lp2[:, 0, :], offsets2, parents2)
+
+        # Extract XYZ over time
+        xyz1 = pos1[:, joint_index, :]
+        xyz2 = pos2[:, joint_index, :]
+
+        # Plot
+        time = np.arange(len(xyz1))
+        plt.figure(figsize=(12, 4))
+        for i, axis in enumerate("XYZ"):
+            plt.subplot(1, 3, i + 1)
+            plt.plot(time, xyz1[:, i], label="Original")
+            plt.plot(time, xyz2[:, i], label="Dampened")
+            plt.title(f"{joint_name} {axis}-Position")
+            plt.xlabel("Frame")
+            plt.ylabel("Position")
+            plt.legend()
+        plt.tight_layout()
         plt.show()
-        return positions
-    return (plot_joint_trajectory,)
+
+
+    def plot_joint_rotation_comparison(bvh_path_1, bvh_path_2, joint_name):
+        bvh1 = BVH()
+        bvh1.load(bvh_path_1)
+
+        bvh2 = BVH()
+        bvh2.load(bvh_path_2)
+
+        joint_index = bvh1.data["names"].tolist().index(joint_name)
+
+        rot1, *_ = bvh1.get_data()
+        rot2, *_ = bvh2.get_data()
+
+        # Convert to scaled angle axis and extract the angle (norm of the axis vector)
+        angles1 = np.linalg.norm(quat.to_scaled_angle_axis(rot1[:, joint_index]), axis=1)
+        angles2 = np.linalg.norm(quat.to_scaled_angle_axis(rot2[:, joint_index]), axis=1)
+
+        time = np.arange(len(angles1))
+        plt.figure(figsize=(6, 4))
+        plt.plot(time, np.degrees(angles1), label="Original")
+        plt.plot(time, np.degrees(angles2), label="Dampened")
+        plt.title(f"{joint_name} Rotation Angle")
+        plt.xlabel("Frame")
+        plt.ylabel("Degrees")
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
+    return plot_joint_positions_comparison, plot_joint_rotation_comparison
 
 
 @app.cell
-def _(here, plot_joint_trajectory):
-    plot_joint_trajectory(here() / "samples" / "delayed.bvh", "RightHand", "damped", "red")
-    return
-
-
-@app.cell
-def _(bvh_path, plot_joint_trajectory):
-    plot_joint_trajectory(bvh_path, "RightHand", "original", "blue")
-    return
-
-
-@app.cell
-def _(Dict, Optional, Path, bvhio, glm, np, savgol_filter):
-    def dampen_joint_recursively(joint, frame_range, joint_params, default_damping=0.5, default_window=15):
-        joint_name = joint.Name
-        params = joint_params.get(joint_name, {})
-        damping_factor = params.get("damping_factor", default_damping)
-        window_size = params.get("window_size", default_window)
-
-        positions, rotations = [], []
-
-        for frame in range(frame_range):
-            joint.loadPose(frame)
-            key = joint.getKeyframe(frame)
-            positions.append([key.Position.x, key.Position.y, key.Position.z])
-            rotations.append([key.Rotation.x, key.Rotation.y, key.Rotation.z])  # Euler XYZ
-
-        positions = np.array(positions)
-        rotations = np.array(rotations)
-
-        # Smooth positions
-        smoothed_pos = np.array([
-            savgol_filter(positions[:, i], window_size, 3) for i in range(3)
-        ]).T
-
-        # Smooth rotations
-        smoothed_rot = np.array([
-            savgol_filter(rotations[:, i], window_size, 3) for i in range(3)
-        ]).T
-
-        for frame in range(frame_range):
-            # Blend position
-            original_pos = glm.vec3(positions[frame])
-            smooth_pos = glm.vec3(smoothed_pos[frame])
-            final_pos = glm.mix(original_pos, smooth_pos, damping_factor)
-
-            # Blend rotation (Euler angles in degrees)
-            original_rot = glm.vec3(rotations[frame])
-            smooth_rot = glm.vec3(smoothed_rot[frame])
-            final_rot = glm.mix(original_rot, smooth_rot, damping_factor)
-
-            transform = bvhio.Transform()
-            transform.Position = final_pos
-            transform.Rotation = final_rot  # Assuming Euler XYZ
-            transform.Scale = joint.getKeyframe(frame).Scale
-
-            joint.setKeyframe(frame, transform)
-
-        # Recurse
-        for child in joint.Children:
-            dampen_joint_recursively(child, frame_range, joint_params)
-
-
-    def dampen_all_joints_recursively(file_path: Path, joint_params: Dict, output_dir: Optional[Path] = None):
+def _(BVH, Path, mo):
+    def split_bvh_by_duration(input_bvh_path: Path, output_dir: Path, chunk_duration_sec: float = 30.0):
         """
-        Dampen the motion of all joints in a BVH file recursively, respecting hierarchy.
+        Splits a BVH file into multiple chunks based on a time duration (default: 30s).
+
+        Parameters:
+        - input_bvh_path (Path): Path to the input BVH file.
+        - output_dir (Path): Directory to store the chunked BVH files.
+        - chunk_duration_sec (float): Duration (in seconds) of each chunk.
         """
-        root = bvhio.readAsHierarchy(file_path)
-        frame_range = root.getKeyframeRange()[1] + 1
-        print(f"Analyzing {frame_range} frames in {file_path.name}")
+        bvh = BVH()
+        bvh.load(input_bvh_path)
+        fname = input_bvh_path.stem
 
-        # Start recursive smoothing from the root
-        dampen_joint_recursively(root, frame_range, joint_params)
+        # Extract data
+        local_rotations, local_positions, parents, offsets, end_sites, end_sites_parents = bvh.get_data()
+        frame_time = bvh.data["frame_time"]
+        total_frames = local_rotations.shape[0]
 
-        # Write back
-        output_file = output_dir / f"{file_path.stem}_recursive.bvh"
-        bvhio.writeHierarchy(output_file, root, 1 / 30)
-        print(f"Written smoothed file to {output_file}")
-    return dampen_all_joints_recursively, dampen_joint_recursively
+        # Frames per chunk
+        frames_per_chunk = int(chunk_duration_sec / frame_time)
+        num_chunks = (total_frames + frames_per_chunk - 1) // frames_per_chunk  # ceil division
+
+        # Create output directory if it doesn't exist
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        for i in (pbar := mo.status.progress_bar(range(num_chunks), title="Processing Chunks")):
+            start = i * frames_per_chunk
+            end = min((i + 1) * frames_per_chunk, total_frames)
+
+            # Slice data
+            chunk_rotations = local_rotations[start:end]
+            chunk_positions = local_positions[start:end]
+
+            # Set and save
+            bvh.set_data(chunk_rotations, chunk_positions)
+            chunk_filename = output_dir / f"{fname}_chunk_{i:03d}.bvh"
+            bvh.save(chunk_filename)
+            # pbar.update(title=f"Saved chunk {i + 1}/{num_chunks}: {chunk_filename}")
+    return (split_bvh_by_duration,)
 
 
 @app.cell
-def _(bvh_path, dampen_all_joints_recursively, here, joint_params):
-    dampen_all_joints_recursively(bvh_path, joint_params, output_dir=here() / "samples")
+def _(Path, here, split_bvh_by_duration):
+    split_bvh_by_duration(
+        Path("~/projects/data/Session_1/c/c.bvh").expanduser(), here() / "samples" / "chunks", chunk_duration_sec=30.0
+    )
     return
 
 

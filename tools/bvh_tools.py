@@ -12,6 +12,51 @@ from scipy.signal import savgol_filter
 from tqdm.auto import tqdm, trange
 from tyro.extras import subcommand_cli_from_dict
 from wasabi import msg
+from tqdm import trange
+from pymotion.io.bvh import BVH
+import pymotion.rotations.quat as quat
+from pymotion.ops.skeleton import fk
+
+
+def split_bvh_by_duration(input_bvh_path: Path, output_dir: Path, chunk_duration_sec: float = 30.0):
+    """
+    Splits a BVH file into multiple chunks based on a time duration (default: 30s).
+
+    Parameters:
+    - input_bvh_path (Path): Path to the input BVH file.
+    - output_dir (Path): Directory to store the chunked BVH files.
+    - chunk_duration_sec (float): Duration (in seconds) of each chunk.
+    """
+    bvh = BVH()
+    bvh.load(input_bvh_path.expanduser())
+    fname = input_bvh_path.stem
+
+    # Extract data
+    local_rotations, local_positions, parents, offsets, end_sites, end_sites_parents = bvh.get_data()
+    frame_time = bvh.data["frame_time"]
+    total_frames = local_rotations.shape[0]
+
+    # Frames per chunk
+    frames_per_chunk = int(chunk_duration_sec / frame_time)
+    num_chunks = (total_frames + frames_per_chunk - 1) // frames_per_chunk  # ceil division
+
+    # Create output directory if it doesn't exist
+    output_dir = output_dir.expanduser()
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    for i in (pbar := trange(num_chunks)):
+        start = i * frames_per_chunk
+        end = min((i + 1) * frames_per_chunk, total_frames)
+
+        # Slice data
+        chunk_rotations = local_rotations[start:end]
+        chunk_positions = local_positions[start:end]
+
+        # Set and save
+        bvh.set_data(chunk_rotations, chunk_positions)
+        chunk_filename = output_dir / f"{fname}_chunk_{i:03d}.bvh"
+        bvh.save(chunk_filename)
+        pbar.set_description(f"Saved chunk {i + 1}/{num_chunks}: {chunk_filename}")
 
 
 def dampen_multiple_joints(file_path: Path, joint_params: Dict, output_dir: Optional[Path] = None):
@@ -163,5 +208,6 @@ if __name__ == "__main__":
         dict(
             dampen=dampener,
             extract=extract_world_positions,
+            split=split_bvh_by_duration,
         )
     )
