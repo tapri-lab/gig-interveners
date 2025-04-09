@@ -12,9 +12,9 @@ from scipy.signal import savgol_filter
 from tqdm.auto import tqdm, trange
 from tyro.extras import subcommand_cli_from_dict
 from wasabi import msg
-from tqdm import trange
 from pymotion.io.bvh import BVH
 import pymotion.rotations.quat as quat
+from scipy.ndimage import gaussian_filter1d
 from pymotion.ops.skeleton import fk
 
 
@@ -61,68 +61,69 @@ def split_bvh_by_duration(input_bvh_path: Path, output_dir: Path, chunk_duration
 
 def dampen_multiple_joints(file_path: Path, joint_params: Dict, output_dir: Optional[Path] = None):
     """
-    Dampen the motion of multiple joints in a BVH file using Savitzky-Golay filter.
+    Dampen the motion of multiple joints in a BVH file using Gaussian smoothing on rotation data.
+
     Args:
         file_path: Path to the input BVH file.
         joint_params: Dictionary containing joint names as keys and their parameters as values.
             Each value should be a dictionary with the following keys:
-            - damping_factor: The factor by which the smoothed position is mixed with the original position.
-            - window_size: The length of the filter window (must be an odd integer).
+            - sigma: Standard deviation for Gaussian filter (controls smoothing amount)
         output_dir: Path to save the output BVH file.
     """
-    root = bvhio.readAsHierarchy(file_path)
-    frame_range = root.getKeyframeRange()[1] + 1
-    print(f"Analyzing {frame_range} frames")
+
+    if output_dir is None:
+        output_dir = file_path.parent
+    output_dir.mkdir(exist_ok=True, parents=True)
+    output_path = output_dir / f"{file_path.stem}_smoothed.bvh"
+
+    bvh = BVH()
+    bvh.load(file_path.expanduser())
+
+    # Extract data
+    local_rotations, local_positions, parents, offsets, end_sites, end_sites_parents = bvh.get_data()
+
     msg.info(f"File: {file_path}")
+    print(f"Analyzing {local_rotations.shape[0]} frames")
 
     for joint_name, params in joint_params.items():
-        target_joint = root.filter(joint_name)[0]
-        damping_factor = params.get("damping_factor", 0.5)
-        window_size = params.get("window_size", 15)
+        try:
+            # Find index of the joint
+            joint_index = bvh.data["names"].tolist().index(joint_name)
+        except ValueError:
+            msg.warn(f"Joint '{joint_name}' not found in BVH file, skipping")
+            continue
 
-        print(f"\nProcessing {joint_name}")
-        print("Sample of original local positions:")
+        sigma = params.get("sigma", 3.0)
+        print(f"\nProcessing {joint_name} with sigma={sigma}")
 
-        positions = []
-        original_positions = []
-        for frame in range(frame_range):
-            target_joint.loadPose(frame)
-            pos = target_joint.Position
-            positions.append([pos.x, pos.y, pos.z])
-            if frame < 5:
-                print(f"Frame {frame}: {pos}")
-                original_positions.append(pos)
+        # Convert quaternion to scaled axis angle for smoothing
+        axis_angles = quat.to_scaled_angle_axis(local_rotations[:, joint_index])
 
-        positions = np.array(positions)
+        # Show sample of original values
+        print("Sample of original axis-angle rotations:")
+        for i in range(min(5, axis_angles.shape[0])):
+            print(f"Frame {i}: {axis_angles[i]}")
 
-        # Apply Savitzky-Golay filter to local positions
-        smoothed_x = savgol_filter(positions[:, 0], window_size, 3)
-        smoothed_y = savgol_filter(positions[:, 1], window_size, 3)
-        smoothed_z = savgol_filter(positions[:, 2], window_size, 3)
+        # Apply Gaussian smoothing to each dimension of the axis-angle representation
+        smoothed = np.stack([gaussian_filter1d(axis_angles[:, i], sigma=sigma) for i in range(3)], axis=-1)
 
-        print("\nSample of smoothed local positions:")
-        smoothed_positions = []
+        # Show sample of smoothed values
+        print("\nSample of smoothed axis-angle rotations:")
+        for i in range(min(5, smoothed.shape[0])):
+            print(f"Frame {i}: {smoothed[i]}")
 
-        for frame in range(frame_range):
-            original = glm.vec3(positions[frame])
-            smoothed = glm.vec3(smoothed_x[frame], smoothed_y[frame], smoothed_z[frame])
-            final_pos = glm.mix(original, smoothed, damping_factor)
+        # Convert back to quaternion
+        smoothed_quat = quat.from_scaled_angle_axis(smoothed)
 
-            if frame < 5:
-                print(f"Frame {frame}: {final_pos}")
-                smoothed_positions.append(final_pos)
+        # Replace original joint's rotations
+        local_rotations[:, joint_index] = smoothed_quat
 
-            new_transform = bvhio.Transform()
-            new_transform.Position = final_pos
-            new_transform.Rotation = target_joint.getKeyframe(frame).Rotation
-            new_transform.Scale = target_joint.getKeyframe(frame).Scale
+    # Set modified data back and save
+    bvh.set_data(local_rotations, local_positions)
+    bvh.save(output_path)
 
-            target_joint.setKeyframe(frame, new_transform)
-
-        max_diff = max(glm.length(p1 - p2) for p1, p2 in zip(original_positions, smoothed_positions))
-        print(f"\nMaximum position difference in first 5 frames: {max_diff}")
-
-    bvhio.writeHierarchy(output_dir / f"{file_path.stem}.bvh", root, 1 / 30)
+    msg.good(f"Saved smoothed animation to: {output_path}")
+    return output_path
 
 
 def extract_world_positions(folder: Path, joint_names: List[str], output_path: Optional[Path] = None):

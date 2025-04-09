@@ -96,20 +96,26 @@ def _(BVH, gaussian_filter1d, np, quat):
 
 @app.cell
 def _(bvh_path, dampen_joint_motion, out_path):
-    dampen_joint_motion(bvh_path, out_path, "RightArm", 20)
-    dampen_joint_motion(out_path, out_path, "RightForeArm", 20)
+    dampen_joint_motion(bvh_path, out_path, "LeftArm", 5)
+    dampen_joint_motion(out_path, out_path, "LeftForeArm", 10)
     return
 
 
 @app.cell
 def _(bvh_path, out_path, plot_joint_positions_comparison):
-    plot_joint_positions_comparison(bvh_path, out_path, "RightHand")
+    plot_joint_positions_comparison(bvh_path, out_path, "LeftHand")
     return
 
 
 @app.cell
 def _(bvh_path, out_path, plot_joint_rotation_comparison):
     plot_joint_rotation_comparison(bvh_path, out_path, "LeftHand")
+    return
+
+
+@app.cell
+def _(bvh_path, here, plot_joint_positions_comparison):
+    plot_joint_positions_comparison(bvh_path, here() / "samples" / "dampened" /"c_chunk001_smoothed.bvh", "LeftHand")
     return
 
 
