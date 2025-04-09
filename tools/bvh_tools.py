@@ -74,7 +74,7 @@ def dampen_multiple_joints(file_path: Path, joint_params: Dict, output_dir: Opti
     if output_dir is None:
         output_dir = file_path.parent
     output_dir.mkdir(exist_ok=True, parents=True)
-    output_path = output_dir / f"{file_path.stem}_smoothed.bvh"
+    output_path = output_dir / f"{file_path.stem}.bvh"
 
     bvh = BVH()
     bvh.load(file_path.expanduser())
