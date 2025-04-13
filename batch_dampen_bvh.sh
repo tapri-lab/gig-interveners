@@ -19,7 +19,7 @@ LABELS=("a" "b" "c" "j" "l")
 
 for LABEL in "${LABELS[@]}"; do
   INPUT_PATH="${BASE_FOLDER}/${LABEL}/${LABEL}_chunks"
-  OUTPUT_PATH="${BASE_FOLDER}/${LABEL}/${OUTPUT_SUFFIX}"
+  OUTPUT_PATH="${BASE_FOLDER}/${LABEL}/${LABEL}_${OUTPUT_SUFFIX}"
 
   echo "Processing $LABEL with $N_JOBS jobs..."
   uv run tools/bvh_tools.py dampen \

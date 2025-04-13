@@ -15,10 +15,9 @@ OmegaConf.register_new_resolver("here", lambda: here())
 
 @dataclass
 class RQASettings:
-    threshold: Optional[float]
-    recurrence_rate: Optional[float]
     joint_pair_rec: List[List]
     indiv_joints: List[str]
+    recurrence_rate: float = 0.02
 
 
 @dataclass

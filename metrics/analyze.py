@@ -49,7 +49,6 @@ def run_indiv_joint_analysis(
             person,
             joint,
             chunk,
-            rqa_settings.threshold,
             rqa_settings.recurrence_rate,
         )
         for person, joint in person_joint_pairs
@@ -76,7 +75,6 @@ def run_cross_person_analysis(
             person1,
             person2,
             chunk,
-            rqa_settings.threshold,
             rqa_settings.recurrence_rate,
         )
         for person1, person2 in all_pairs

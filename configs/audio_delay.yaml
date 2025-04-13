@@ -7,23 +7,23 @@ bvh_audio_folder_paths:
   person1:  
     bvh: "${base_data_path}/a/a_chunks/"
     zarr: "${base_data_path}/a/a_world_pos.zip"
-    audio: "${base_data_path}/a/shift_100hz/"
+    audio: "${base_data_path}/a/a_delay_m0.5/"
   person2:
     bvh: "${base_data_path}/c/c_chunks/"
     zarr: "${base_data_path}/c/c_world_pos.zip"
-    audio: "${base_data_path}/c/shift_100hz/"
+    audio: "${base_data_path}/c/c_delay_m0.5/"
   person3:
     bvh: "${base_data_path}/b/b_chunks/"
     zarr: "${base_data_path}/b/b_world_pos.zip"
-    audio: "${base_data_path}/b/shift_100hz/"
+    audio: "${base_data_path}/b/b_delay_m0.5/"
   person4:
     bvh: "${base_data_path}/j/j_chunks/"
     zarr: "${base_data_path}/j/j_world_pos.zip"
-    audio: "${base_data_path}/j/shift_100hz/"
+    audio: "${base_data_path}/j/j_delay_m0.5/"
   person5:
     bvh: "${base_data_path}/l/l_chunks/"
     zarr: "${base_data_path}/l/l_world_pos.zip"
-    audio: "${base_data_path}/l/shift_100hz/"
+    audio: "${base_data_path}/l/l_delay_m0.5/"
 rqa_settings:
   recurrence_rate: 0.02
   indiv_joints:

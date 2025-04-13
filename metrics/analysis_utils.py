@@ -10,7 +10,7 @@ from becemd import compute_becemd
 from numpy.typing import NDArray
 from ott.geometry.costs import SoftDTW
 from pandas import DataFrame
-from pyunicorn.timeseries.cross_recurrence_plot import CrossRecurrencePlot
+from pyunicorn.timeseries.cross_recurrence_plot import CrossRecurrencePlot, RecurrencePlot
 from rich.console import Console
 from rich.table import Table
 from rich_tools import table_to_df
@@ -62,16 +62,15 @@ def merge_results(tables: List[ResultsTable]) -> pl.DataFrame:
 
 
 class RQA:
-    def __init__(self, recurrence_radius: float, recurrence_rate: Optional[float] = None):
+    def __init__(self, recurrence_rate: float = 0.02):
         """
         A basic rqa wrapper class
         A basic class for calculating recurrence quantification analysis metrics.
 
         Parameters
         ----------
-        recurrence_radius : float
-            Threshold radius within which points are considered recurrent. This value determines
-            whether two points in phase space are considered "close enough" to be recurrent.
+        recurrence_rate : float
+            Recurrence rate for cross-recurrence analysis. If None, the default value is used.
 
         Notes
         -----
@@ -82,26 +81,26 @@ class RQA:
         Args:
             recurrence_radius : float - The threshold value used to create the recurrence matrix
         """
-        self.recurrence_radius = recurrence_radius
         self.recurrence_rate = recurrence_rate
 
-    def calculate_rec_matrix(self, data: NDArray) -> NDArray:
-        return sync.recurrence_matrix(data, radius=self.recurrence_radius)
+    def calculate_rqa_metrics(self, signal: NDArray) -> Tuple[Tuple[float, float, float, float], float]:
+        r = RecurrencePlot(signal, metric="euclidean", recurrence_rate=self.recurrence_rate)
+        dist = r.distance_matrix("euclidean")
+        rec_matrix = r.recurrence_matrix()
+        threshold = r.threshold_from_recurrence_rate(dist, self.recurrence_rate)
+        return sync.rqa_metrics(rec_matrix), threshold
 
-    def calculate_rqa_metrics(self, rec_matrix: NDArray) -> Tuple[float, float, float, float]:
-        return sync.rqa_metrics(rec_matrix)
+    def calculate_crqa_metrics(
+        self,
+        signal1: NDArray,
+        signal2: NDArray,
+    ) -> Tuple[Tuple[float, float, float, float], float]:
+        cr = CrossRecurrencePlot(signal1, signal2, recurrence_rate=self.recurrence_rate, metric="euclidean")
 
-    def calculate_crqa_metrics(self, signal1: NDArray, signal2: NDArray) -> Tuple[float, float, float, float]:
-        match self.recurrence_rate:
-            case None:
-                cr = CrossRecurrencePlot(signal1, signal2, threshold=self.recurrence_radius, metric="euclidean")
-            case float():
-                cr = CrossRecurrencePlot(signal1, signal2, recurrence_rate=self.recurrence_rate, metric="euclidean")
-            case _:
-                raise ValueError(f"Invalid recurrence rate value, got {self.recurrence_rate}")
-
-        matrix = cr.recurrence_matrix()
-        return sync.rqa_metrics(matrix)
+        rec_matrix = cr.recurrence_matrix()
+        dist = cr.distance_matrix("euclidean")
+        threshold = cr.threshold_from_recurrence_rate(dist, self.recurrence_rate)
+        return sync.rqa_metrics(rec_matrix), threshold
 
 
 def indiv_joint_level_recurrence(
@@ -109,26 +108,21 @@ def indiv_joint_level_recurrence(
     person: str,
     joint_name: str,
     chunk: str,
-    recurrence_radius: Optional[float] = None,
-    recurrence_rate: Optional[float] = None,
-    frames_first: bool = True,
+    recurrence_rate: float = 0.02,
 ) -> ResultsTable:
-    rqa = RQA(recurrence_radius=recurrence_radius, recurrence_rate=recurrence_rate)
+    rqa = RQA(recurrence_rate=recurrence_rate)
 
     res_table = ResultsTable(title=f"{''.join(person)}-{joint_name}-{chunk}")
     res_table.add_metadata("person", person)
     res_table.add_metadata("joint", joint_name)
     res_table.add_metadata("chunk", chunk)
-    if frames_first:
-        joint_data = einops.rearrange(joint_data, "f d -> d f")
 
-    rec_matrix = rqa.calculate_rec_matrix(joint_data)
-
-    rec, det, mean_length, max_length = sync.rqa_metrics(rec_matrix)
+    (rec, det, mean_length, max_length), thr = rqa.calculate_rqa_metrics(joint_data)
     res_table.add_result("Recurrence Rate", rec)
     res_table.add_result("Determinism", det)
     res_table.add_result("Mean Length", mean_length)
     res_table.add_result("Max Length", max_length)
+    res_table.add_result("Recurrence Radius", thr)
 
     return res_table
 
@@ -138,12 +132,11 @@ def cross_person_joint_level_recurrence(
     person1: str,
     person2: str,
     chunk: str,
-    recurrence_radius: Optional[float] = None,
-    recurrence_rate: Optional[float] = None,
+    recurrence_rate: float = 0.02,
 ) -> List[ResultsTable]:
     results = []
 
-    rqa = RQA(recurrence_radius=recurrence_radius, recurrence_rate=recurrence_rate)
+    rqa = RQA(recurrence_rate=recurrence_rate)
     persons = list(joint_data.keys())
     joints = list(joint_data[persons[0]].keys())
     for joint in joints:
@@ -155,12 +148,13 @@ def cross_person_joint_level_recurrence(
         pj1 = joint_data[person1][joint]
         pj2 = joint_data[person2][joint]
 
-        rec_rate, det, mean_length, max_length = rqa.calculate_crqa_metrics(pj1, pj2)
+        (rec_rate, det, mean_length, max_length), thr = rqa.calculate_crqa_metrics(pj1, pj2)
 
         res_table.add_result("Recurrence Rate", rec_rate)
         res_table.add_result("Determinism", det)
         res_table.add_result("Mean Length", mean_length)
         res_table.add_result("Max Length", max_length)
+        res_table.add_result("Recurrence Radius", thr)
 
         results.append(res_table)
     return results

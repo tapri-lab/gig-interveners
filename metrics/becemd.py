@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from bvh import Bvh
 from scipy.signal import butter, filtfilt, find_peaks, savgol_filter
+from wasabi import msg
 
 
 # Your existing filter and envelope functions
@@ -239,83 +240,88 @@ def compute_becemd(
     cleanresults : dict
         Simplified results with just scores and beat timings
     """
-
+    msg.info(f"Processing {bvh_file} and {audio_file}")
     # Load and process motion data
-    angles, frame_time = extract_arm_angles(bvh_file)
-    angle_diff = calculate_angle_changes(angles)
-    angle_diff = scale_signal(angle_diff)
+    try:
+        angles, frame_time = extract_arm_angles(bvh_file)
+        angle_diff = calculate_angle_changes(angles)
+        angle_diff = scale_signal(angle_diff)
 
-    # Process audio
-    ampv, sr = amp_envelope(audio_file)
-    target_len = len(angle_diff)
-    ampv = np.interp(np.linspace(0, len(ampv), target_len), np.arange(len(ampv)), ampv)
-    ampv = scale_signal(ampv)
+        # Process audio
+        ampv, sr = amp_envelope(audio_file)
+        target_len = len(angle_diff)
+        ampv = np.interp(np.linspace(0, len(ampv), target_len), np.arange(len(ampv)), ampv)
+        ampv = scale_signal(ampv)
 
-    # Calculate IMFs for both signals
-    motion_signals = {
-        "raw": angle_diff,
-        "imf1": scale_signal(my_get_next_imf(angle_diff)),
-        "imf2": scale_signal(my_get_next_imf(angle_diff - my_get_next_imf(angle_diff))),
-    }
+        # Calculate IMFs for both signals
+        motion_signals = {
+            "raw": angle_diff,
+            "imf1": scale_signal(my_get_next_imf(angle_diff)),
+            "imf2": scale_signal(my_get_next_imf(angle_diff - my_get_next_imf(angle_diff))),
+        }
 
-    audio_signals = {
-        "raw": ampv,
-        "imf1": scale_signal(my_get_next_imf(ampv)),
-        "imf2": scale_signal(my_get_next_imf(ampv - my_get_next_imf(ampv))),
-    }
+        audio_signals = {
+            "raw": ampv,
+            "imf1": scale_signal(my_get_next_imf(ampv)),
+            "imf2": scale_signal(my_get_next_imf(ampv - my_get_next_imf(ampv))),
+        }
 
-    # Calculate beats for each motion signal
-    motion_beats = {}
-    for name, signal in motion_signals.items():
-        beats = detect_motion_beats(signal, threshold=0.1, min_distance=30)
-        motion_beats[name] = beats
+        # Calculate beats for each motion signal
+        motion_beats = {}
+        for name, signal in motion_signals.items():
+            beats = detect_motion_beats(signal, threshold=0.1, min_distance=30)
+            motion_beats[name] = beats
 
-    # Calculate cross-signal beat consistency
-    scores = {}
-    beats = {}
-    for m_name, m_beats in motion_beats.items():
-        for a_name, a_signal in audio_signals.items():
-            key = f"{m_name}_vs_{a_name}"
-            score, beat_times = beat_consistency_score(m_beats, a_signal)
-            scores[key] = score
-            beats[key] = beat_times
-
-    if plot:
-        plt.figure(figsize=(20, 15))
-        n_rows = len(motion_signals)
-        n_cols = len(audio_signals)
-
-        for i, (m_name, m_signal) in enumerate(motion_signals.items()):
-            for j, (a_name, a_signal) in enumerate(audio_signals.items()):
-                plt.subplot(n_rows, n_cols, i * n_cols + j + 1)
-                time_axis = np.arange(len(m_signal)) / 200
-
-                plt.plot(time_axis, m_signal, label="Motion", alpha=0.6)
-                plt.plot(time_axis, a_signal, label="Audio", alpha=0.6)
-
+        # Calculate cross-signal beat consistency
+        scores = {}
+        beats = {}
+        for m_name, m_beats in motion_beats.items():
+            for a_name, a_signal in audio_signals.items():
                 key = f"{m_name}_vs_{a_name}"
-                plt.vlines(motion_beats[m_name], -1, 1, colors="r", label="Motion Beats", alpha=0.5)
-                plt.vlines(beats[key], -1, 1, colors="g", label="Audio Beats", alpha=0.5)
+                score, beat_times = beat_consistency_score(m_beats, a_signal)
+                scores[key] = score
+                beats[key] = beat_times
 
-                plt.title(f"{m_name.upper()} vs {a_name.upper()}\n(BC Score: {scores[key]:.4f})")
-                plt.ylim(-1.1, 1.1)
-                plt.legend()
+        if plot:
+            plt.figure(figsize=(20, 15))
+            n_rows = len(motion_signals)
+            n_cols = len(audio_signals)
 
-        plt.tight_layout()
-        plt.savefig(plot_save_path)
+            for i, (m_name, m_signal) in enumerate(motion_signals.items()):
+                for j, (a_name, a_signal) in enumerate(audio_signals.items()):
+                    plt.subplot(n_rows, n_cols, i * n_cols + j + 1)
+                    time_axis = np.arange(len(m_signal)) / 200
 
-    # Return results
-    results = {
-        "scores": scores,
-        "signals": {
-            "motion": motion_signals,
-            "audio": audio_signals,
-            "motion_beats": motion_beats,
-            "audio_beats": beats,
-        },
-    }
+                    plt.plot(time_axis, m_signal, label="Motion", alpha=0.6)
+                    plt.plot(time_axis, a_signal, label="Audio", alpha=0.6)
 
-    cleanresults = {"scores": scores}
+                    key = f"{m_name}_vs_{a_name}"
+                    plt.vlines(motion_beats[m_name], -1, 1, colors="r", label="Motion Beats", alpha=0.5)
+                    plt.vlines(beats[key], -1, 1, colors="g", label="Audio Beats", alpha=0.5)
+
+                    plt.title(f"{m_name.upper()} vs {a_name.upper()}\n(BC Score: {scores[key]:.4f})")
+                    plt.ylim(-1.1, 1.1)
+                    plt.legend()
+
+            plt.tight_layout()
+            plt.savefig(plot_save_path)
+
+        # Return results
+        results = {
+            "scores": scores,
+            "signals": {
+                "motion": motion_signals,
+                "audio": audio_signals,
+                "motion_beats": motion_beats,
+                "audio_beats": beats,
+            },
+        }
+
+        cleanresults = {"scores": scores}
+    except Exception as e:
+        msg.fail(f"Error processing {bvh_file} and {audio_file}: {e}")
+        results = {"scores": {"fail": -1}}
+        cleanresults = {"scores": {"fail": -1}}
 
     return results, cleanresults
 

@@ -2,9 +2,9 @@ base_data_path: "/home/ojas/data/dnd/Session_1/"
 metrics_to_run:
   - indiv_rqa
   - crqa
-#  - beat_consistency
+  - beat_consistency
   - cross_beat_consistency
-#  - sdtw
+  - sdtw
 bvh_audio_folder_paths:
   person1:
     bvh: "${base_data_path}/a/a_chunks/"
@@ -27,7 +27,6 @@ bvh_audio_folder_paths:
     zarr: "${base_data_path}/l/l_world_pos.zip"
     audio: "${base_data_path}/l/audio_segments/"
 rqa_settings:
-  threshold: 0.5
   recurrence_rate: 0.02
   indiv_joints:
     - LeftHand
