@@ -1,8 +1,6 @@
-from typing import Optional
-
 from jaxtyping import Array
-from ott.geometry.costs import CostFn, SoftDTW
+from ott.geometry.costs import SoftDTW
 
 
-def sdtw(s: SoftDTW, x: Array, y: Array, gamma: float, ground_cost: Optional[CostFn] = None) -> float:
+def sdtw(s: SoftDTW, x: Array, y: Array) -> float:
     return s(x, y)

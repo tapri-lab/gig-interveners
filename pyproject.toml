@@ -48,6 +48,11 @@ dependencies = [
     "altair[all]>=5.5.0",
     "jax-metal>=0.1.1; sys_platform == 'darwin'",
     "upc-pymotion[viewer]>=0.2.3",
+    "python-lsp-server>=1.12.2",
+    "websockets>=15.0.1",
+    "python-lsp-ruff>=2.2.2",
+    "lsprotocol>=2023.0.1",
+    "cattrs>=24.1.3",
 ]
 
 

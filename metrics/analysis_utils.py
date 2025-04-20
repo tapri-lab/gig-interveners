@@ -194,7 +194,7 @@ def run_cross_person_sdtw(
     persons = list(joint_data.keys())
     joints = list(joint_data[persons[0]].keys())
     results = []
-    s = jax.jit(SoftDTW(gamma=0.1))
+    s = jax.jit(SoftDTW(gamma=gamma))
     for joint in joints:
         res_table = ResultsTable(title=f"{person1} vs {person2}-{joint}-{chunk}")
         res_table.add_metadata("person1", person1)
@@ -204,7 +204,7 @@ def run_cross_person_sdtw(
         pj1 = joint_data[person1][joint]
         pj2 = joint_data[person2][joint]
 
-        dist = sdtw(s, pj1, pj2, gamma=gamma)
+        dist = sdtw(s, pj1, pj2)
         res_table.add_result("Distance", dist)
         results.append(res_table)
     return results
