@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, SupportsFloat, Tuple
 
 import einops
+from sklearn.preprocessing import StandardScaler
 import jax
 import pandas as pd
 import polars as pl
@@ -84,7 +85,12 @@ class RQA:
         self.recurrence_rate = recurrence_rate
 
     def calculate_rqa_metrics(self, signal: NDArray) -> Tuple[Tuple[float, float, float, float], float]:
-        r = RecurrencePlot(signal, metric="euclidean", recurrence_rate=self.recurrence_rate)
+        r = RecurrencePlot(
+            signal,
+            metric="euclidean",
+            recurrence_rate=self.recurrence_rate,
+            normalize=True,
+        )
         dist = r.distance_matrix("euclidean")
         rec_matrix = r.recurrence_matrix()
         threshold = r.threshold_from_recurrence_rate(dist, self.recurrence_rate)
@@ -95,7 +101,13 @@ class RQA:
         signal1: NDArray,
         signal2: NDArray,
     ) -> Tuple[Tuple[float, float, float, float], float]:
-        cr = CrossRecurrencePlot(signal1, signal2, recurrence_rate=self.recurrence_rate, metric="euclidean")
+        cr = CrossRecurrencePlot(
+            signal1,
+            signal2,
+            recurrence_rate=self.recurrence_rate,
+            metric="euclidean",
+            normalize=True,
+        )
 
         rec_matrix = cr.recurrence_matrix()
         dist = cr.distance_matrix("euclidean")
@@ -195,6 +207,7 @@ def run_cross_person_sdtw(
     joints = list(joint_data[persons[0]].keys())
     results = []
     s = jax.jit(SoftDTW(gamma=gamma))
+    scaler = StandardScaler()
     for joint in joints:
         res_table = ResultsTable(title=f"{person1} vs {person2}-{joint}-{chunk}")
         res_table.add_metadata("person1", person1)
@@ -203,6 +216,8 @@ def run_cross_person_sdtw(
         res_table.add_metadata("chunk", chunk)
         pj1 = joint_data[person1][joint]
         pj2 = joint_data[person2][joint]
+        pj1 = scaler.fit_transform(pj1)
+        pj2 = scaler.fit_transform(pj2)
 
         dist = sdtw(s, pj1, pj2)
         res_table.add_result("Distance", dist)

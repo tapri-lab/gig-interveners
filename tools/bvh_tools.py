@@ -1,14 +1,11 @@
 from pathlib import Path
 from typing import Dict, List, Optional
 
-import bvhio
-import glm
 import numpy as np
 import yaml
 import zarr
 import zarr.storage
 from joblib import Parallel, delayed
-from scipy.signal import savgol_filter
 from tqdm.auto import tqdm, trange
 from tyro.extras import subcommand_cli_from_dict
 from wasabi import msg
@@ -126,14 +123,14 @@ def dampen_multiple_joints(file_path: Path, joint_params: Dict, output_dir: Opti
     return output_path
 
 
-def extract_world_positions(folder: Path, joint_names: List[str], output_path: Optional[Path] = None):
+def extract_world_pos(folder: Path, joint_names: List[str], output_path: Optional[Path] = None):
     """
     Extract the world positions of multiple joints in a BVH file.
     Args:
-        file_path: Path to the input BVH file.
+        folder: Path to the input BVH file.
         joint_names: List of joint names to extract world positions.
-    Returns:
-        Dict: Dictionary containing joint names as keys and their world positions as values.
+        output_path: Path to save the output BVH file.
+    Returns: None
     """
     files = folder.rglob("*.bvh")
     output_path = Path("world_positions.zip") if output_path is None else output_path
@@ -141,41 +138,26 @@ def extract_world_positions(folder: Path, joint_names: List[str], output_path: O
     parent_dir.mkdir(exist_ok=True, parents=True)
     store = zarr.storage.ZipStore(output_path, mode="w")
     zarr_root = zarr.create_group(store=store)
-    persons = {}
-    for file_path in files:
-        root = bvhio.readAsHierarchy(str(file_path))
-        chunk = file_path.stem[-3:]
-        person = zarr_root.create_group(chunk)
-        frame_range = root.getKeyframeRange()[1] + 1
+    msg.info(f"Extracting world positions for {joint_names} joints")
 
-        # Dict to store positions for each joint
-        joint_positions = {}
-
-        msg.info(f"Extracting world positions for {joint_names} joints")
-
-        for joint_name in (pbar := tqdm(joint_names)):
-            pbar.set_description(f"Processing {joint_name}")
-            try:
-                target_joint = root.filter(joint_name)[0]
-            except IndexError as e:
-                msg.warn(f"Joint {joint_name} not found in the BVH file")
-                raise e
-            positions = []
-
-            for frame in (pbar2 := trange(frame_range)):
-                root.loadPose(frame, recursive=True)
-                pos = target_joint.PositionWorld
-                positions.append([pos.x, pos.y, pos.z])
-
-                if frame < 5:
-                    print(f"Frame {frame}: {pos}")
-            positions = np.array(positions)
-            p = person.create_array(name=joint_name, shape=positions.shape, dtype="float32")
-            p[:] = positions
+    for file_path in (pbar := tqdm(list(files))):
+        pbar.set_description(f"Processing {file_path}")
+        bvh = BVH()
+        bvh.load(file_path.expanduser())
+        fname = file_path.stem
+        chunk = fname[-3:]
+        zarr_chunk = zarr_root.create_group(chunk)
+        local_rotations, local_positions, parents, offsets, end_sites, end_sites_parents = bvh.get_data()
+        frame_time = bvh.data["frame_time"]
+        frame_range = local_rotations.shape[0]
+        world_pos, rotmats = fk(local_rotations, local_positions[:, 0, :], offsets, parents)
+        for joint_name in joint_names:
+            joint_index = bvh.data["names"].tolist().index(joint_name)
+            pos = world_pos[:, joint_index, :]
+            tmp = zarr_chunk.create_array(name=joint_name, shape=pos.shape, dtype="float32")
+            tmp[:] = pos
     store.close()
     msg.info(f"Saving world positions to {output_path}")
-
-    return persons
 
 
 def dampener(input_path: Path, config_path: Path, output_path: Path, n_jobs: int = -1):
@@ -208,7 +190,7 @@ if __name__ == "__main__":
     subcommand_cli_from_dict(
         dict(
             dampen=dampener,
-            extract=extract_world_positions,
+            extract=extract_world_pos,
             split=split_bvh_by_duration,
         )
     )

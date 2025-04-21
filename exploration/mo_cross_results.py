@@ -190,14 +190,14 @@ def cross_sdtw_plotter(raw_df: pl.DataFrame, n: int):
 def _(results_base):
     base_sdtw = pl.read_parquet(results_base / "sdtw_results.parquet")
     base_sdtw = base_sdtw.with_columns(pl.col("Value").cast(pl.Float32), pl.col("chunk").cast(pl.Int32))
-    base_sdtw.head()
-    return (base_sdtw,)
-
-
-@app.cell
-def _(base_sdtw):
     bz = base_sdtw.with_columns(
         ((pl.col("Value") - pl.col("Value").min()) / (pl.col("Value").max() - pl.col("Value").min()))
+    )
+    bz = (
+        bz.group_by(["person1", "person2", "chunk"])
+        .agg(pl.col("Value").mean())
+        .unique(["person1", "person2"])
+        .sort(["chunk"])
     )
     bz.head()
     return
@@ -208,10 +208,13 @@ def _():
     df = pl.read_parquet(here() / "results_pitch30hz/sdtw_results.parquet").with_columns(
         pl.col("Value").cast(pl.Float32), pl.col("chunk").cast(pl.Int32)
     )
-    df = df.with_columns(
-        ((pl.col("Value") - pl.col("Value").min()) / (pl.col("Value").max() - pl.col("Value").min()))
+    df = df.with_columns(((pl.col("Value") - pl.col("Value").min()) / (pl.col("Value").max() - pl.col("Value").min())))
+    df = (
+        df.group_by(["person1", "person2", "chunk"])
+        .agg(pl.col("Value").mean())
+        .unique(["person1", "person2"])
+        .sort(["chunk"], descending=False)
     )
-    df = df.group_by(["person1", "person2"]).agg(pl.col("Value").mean()).unique(["person1", "person2"])
     df.head()
     return
 
@@ -219,6 +222,12 @@ def _():
 @app.cell
 def _():
     cross_sdtw_plotter(pl.read_parquet(here() / "results_pitch30hz/sdtw_results.parquet"), 5)
+    return
+
+
+@app.cell
+def _():
+    cross_sdtw_plotter(pl.read_parquet(here() / "results_base/sdtw_results.parquet"), 5)
     return
 
 
