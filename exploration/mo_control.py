@@ -1,6 +1,8 @@
+
+
 import marimo
 
-__generated_with = "0.12.9"
+__generated_with = "0.13.0"
 app = marimo.App(width="medium")
 
 
@@ -12,13 +14,14 @@ def _():
     import seaborn as sns
     import polars as pl
     from pyprojroot import here
-    return alt, here, mo, pl, plt, sns
+    return alt, here, mo, pl
 
 
 @app.cell
-def _():
+def _(alt):
     baseline_color = "#74BDCB"
     stick_color = "#FFA384"
+    alt.theme.enable("ggplot2")
     return baseline_color, stick_color
 
 
@@ -28,7 +31,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(here, pl):
     asaq = pl.read_csv(here() / "res_control/ASAQ_baseline_groupNotIntervened_longFormat.csv")
     asaq
@@ -45,7 +48,7 @@ def _(asaq, mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(asaq, pl):
     asaq_base = asaq.filter((pl.col("ordered_rating") != "NA") & (pl.col("condition") == "baseline"))
     asaq_base
@@ -180,7 +183,7 @@ def _(alt, pcq, pl, stick_color):
         )
         .properties(title="PCQ Non-Intervened")
     )
-    return pcq_gni, pcq_gni_chart
+    return (pcq_gni_chart,)
 
 
 @app.cell(hide_code=True)
