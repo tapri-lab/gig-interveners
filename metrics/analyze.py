@@ -191,7 +191,7 @@ def run_pitch_var_analysis(
                 intervened,
                 person,
                 normal.stem[-3:],
-                gamma,
+                gamma=gamma,
             )
             for normal, intervened in paired_files
         )
