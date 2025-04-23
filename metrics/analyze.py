@@ -185,7 +185,7 @@ def run_pitch_var_analysis(
         normal_audio_files = normal_audio_path.rglob("*.wav")
         paired_files = zip(normal_audio_files, intervened_audio_files)
 
-        sdtw_results = (
+        sdtw_results.extend(
             delayed(run_pitch_var_sdtw)(
                 normal,
                 intervened,
