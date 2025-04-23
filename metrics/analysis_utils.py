@@ -251,7 +251,7 @@ def run_pitch_var_sdtw(
 
     path, sim = soft_dtw_alignment(f0_1, f0_2, gamma=gamma)
     path2, sim2 = soft_dtw_alignment(f0_1, f0_1, gamma=gamma)
-    res_table.add_result("Distance_Intervened", sim)
-    res_table.add_result("Distance_Non_Intervened", sim2)
+    res_table.add_result("Distance_Intervened", sim.item())
+    res_table.add_result("Distance_Non_Intervened", sim2.item())
 
     return res_table
