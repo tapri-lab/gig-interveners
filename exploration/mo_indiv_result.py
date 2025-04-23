@@ -3,7 +3,7 @@
 import marimo
 
 __generated_with = "0.13.0"
-app = marimo.App(width="full")
+app = marimo.App(width="medium")
 
 with app.setup:
     import marimo as mo
@@ -103,7 +103,7 @@ def _():
     return base_ijr_path, intervened_ijr_path
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(base_ijr_path, intervened_ijr_path):
     ijr_base = pl.read_parquet(base_ijr_path.path(index=0))
     ijr_int = pl.read_parquet(intervened_ijr_path.path(index=0))
@@ -124,7 +124,7 @@ def _(ijr_base):
 
 
 @app.cell(hide_code=True)
-def _(ijr_base, ijr_int, rqa_metric_choice):
+def _(ijr_base, ijr_int, person_mapping, rqa_metric_choice):
     ijr_joined = ijr_base.join(ijr_int, how="inner", on=["chunk", "person", "joint", "Metric"], suffix="_intervened")
     ijr_joined_filtered = (
         ijr_joined.filter(pl.col("Metric").eq(rqa_metric_choice.value))
@@ -136,25 +136,65 @@ def _(ijr_base, ijr_int, rqa_metric_choice):
         )
         .with_columns(
             pl.col("condition").replace({"Value": "Base", "Value_intervened": "Intervened"}),
+            pl.col("person").replace(person_mapping).str.to_uppercase(),
         )
         .filter(pl.col(f"{rqa_metric_choice.value}") > 0)
     )
     ijr_joined_filtered
-    return (ijr_joined_filtered,)
+    return ijr_joined, ijr_joined_filtered
 
 
-@app.cell
-def _(ijr_joined_filtered, rqa_metric_choice):
-    ijr_joined_filtered.group_by(["person", "condition"]).agg(
+@app.cell(hide_code=True)
+def _(
+    baseline_color,
+    ijr_joined_filtered,
+    intervened_color,
+    rqa_metric_choice,
+):
+    alt.theme.enable("ggplot2")
+    ijr_agg = ijr_joined_filtered.group_by(["person", "condition"]).agg(
         pl.col(f"{rqa_metric_choice.value}").mean().alias("mean"),
         pl.col(f"{rqa_metric_choice.value}").std().alias("std"),
     )
+    base_ijr = alt.Chart(ijr_agg).encode(
+        x=alt.X("person:N", title="Persons"),
+        y=alt.Y(
+            f"mean:Q",
+            title=f"{rqa_metric_choice.value.replace('_', ' ')}",
+        ),
+        color=alt.Color("condition:N", title="Condition").scale(range=[baseline_color, intervened_color]),
+        shape=alt.Shape("condition:N", title="Condition", legend=None),
+        strokeDash=alt.StrokeDash("condition:N", title="Condition", legend=None),
+    )
+
+    points_ijr = base_ijr.mark_point(filled=True, size=60)
+    lines_ijr = base_ijr.mark_line(point=False)
+    # For error bars, use separate chart but keep consistent encoding
+    error_bars_ijr = (
+        alt.Chart(ijr_agg)
+        .mark_errorbar(clip=True, ticks=True, size=10, thickness=2)
+        .encode(
+            x="person:N",
+            y=alt.Y(f"mean:Q", title="").scale(zero=False),
+            yError=alt.YError(f"std:Q"),
+            color=alt.Color("condition:N", title="Condition"),
+        )
+    )
+    chart_ijr = (
+        alt.layer(lines_ijr, points_ijr, error_bars_ijr)
+        .resolve_scale(y="shared")
+        .properties(
+            width=500, height=400, title=f"{rqa_metric_choice.value.replace('_', ' ')} - No Intervention vs Intervention"
+        )
+    )
+
+    mo.ui.altair_chart(chart_ijr)
     return
 
 
 @app.cell(hide_code=True)
 def _():
-    mo.md(r"""## Plotting Recurrence Radius Box-Plots""")
+    mo.md(r"""## Box-Plots""")
     return
 
 
@@ -280,6 +320,32 @@ def _(rqa_lmem_res, rqa_metric_choice):
 
 @app.cell(hide_code=True)
 def _():
+    mo.md(r"""## Wilcoxon""")
+    return
+
+
+@app.cell
+def _(ijr_joined, rqa_metric_choice):
+    wilcx_ijr = ijr_joined.filter(pl.col("Metric") == rqa_metric_choice.value).with_columns(
+        (pl.col("Value_intervened") - pl.col("Value")).alias("deltas"),
+    )
+    return (wilcx_ijr,)
+
+
+@app.cell
+def _(wilcx_ijr):
+    rw_ijr = stats.wilcoxon(wilcx_ijr.select("deltas").to_numpy())
+    mo.md(rf"""
+    | Type  | Value  |
+    |---|---|
+    | Wilcoxon-statistic  | {rw_ijr.statistic.item()}  |
+    | p-value  |  {rw_ijr.pvalue.item()} |
+    """)
+    return
+
+
+@app.cell(hide_code=True)
+def _():
     mo.md(r"""# Self Beat Consistency""")
     return
 
@@ -338,7 +404,7 @@ def _(bfil_base, bfil_int, person_mapping, silence_df):
 @app.cell(hide_code=True)
 def _(bfil_joined):
     bfil_agg = (
-        bfil_joined.filter(pl.col("is_silent") == True)
+        bfil_joined.filter(pl.col("is_silent") == False)
         .group_by(["person", "condition"])
         .agg(
             pl.col("Value").mean().alias("mean"),

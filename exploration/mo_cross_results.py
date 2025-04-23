@@ -525,7 +525,7 @@ def _(bc_joined, person_mapping, session1_silence):
 @app.cell
 def _(bc_silence):
     bc_agg = (
-        bc_silence.filter(pl.col("is_silent").eq(True))
+        bc_silence.filter(pl.col("is_silent").eq(False))
         .group_by(["person", "condition"])
         .agg(
             pl.col("Value").mean().alias("mean"),
@@ -676,7 +676,7 @@ def _(person_mapping, sdtw_base, sdtw_intervened, session1_silence):
             how="left",
             on=["person", "chunk"],
         )
-        .with_columns(pl.col("is_silent").fill_null(True))
+        .with_columns(pl.col("is_silent").fill_null(False))
     )
     joined_sdtw = joined_sdtw.with_columns(((pl.col("Value") - pl.col("Value").mean()) / pl.col("Value").std()))
     joined_sdtw
@@ -685,9 +685,12 @@ def _(person_mapping, sdtw_base, sdtw_intervened, session1_silence):
 
 @app.cell
 def _(joined_sdtw):
-    joined_sdtw_agg = joined_sdtw.group_by(["person", "condition"]).agg(
-        pl.col("Value").mean().alias("mean"), pl.col("Value").std().alias("std")
-    ).with_columns(pl.col("person").str.to_uppercase())
+    joined_sdtw_agg = (
+        joined_sdtw.filter(pl.col("is_silent") == False)
+        .group_by(["person", "condition"])
+        .agg(pl.col("Value").mean().alias("mean"), pl.col("Value").std().alias("std"))
+        .with_columns(pl.col("person").str.to_uppercase())
+    )
     joined_sdtw_agg
     return (joined_sdtw_agg,)
 
@@ -738,7 +741,7 @@ def _():
 
 @app.cell
 def _(joined_sdtw):
-    sdtw_lmem_df = joined_sdtw.rename({"Value": "Distance"})
+    sdtw_lmem_df = joined_sdtw.filter(pl.col("is_silent") == False).rename({"Value": "Distance"})
     sdtw_lmem_df
     return (sdtw_lmem_df,)
 
