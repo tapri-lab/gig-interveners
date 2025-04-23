@@ -10,6 +10,7 @@ from analysis_utils import (
     indiv_joint_level_recurrence,
     merge_results,
     run_cross_person_sdtw,
+    run_pitch_var_sdtw,
 )
 from cmd_utils import Config, RQASettings, SDTWSettings, load_file_paths, read_zarr_into_dict
 from joblib.parallel import Parallel, delayed
@@ -169,6 +170,37 @@ def run_sdtw_analysis(
     return sdtw_out
 
 
+def run_pitch_var_analysis(
+    pll_exec: Parallel,
+    audio_data: Dict[str, Dict[str, Path]],
+    gamma: float = 1.0,
+):
+    msg.divider("SDTW Analysis - Pitch Variability")
+    people = audio_data.keys()
+    sdtw_results = []
+    for person in people:
+        intervened_audio_path = audio_data[person]["audio"]
+        normal_audio_path = audio_data[person]["normal_audio"]
+        intervened_audio_files = intervened_audio_path.rglob("*.wav")
+        normal_audio_files = normal_audio_path.rglob("*.wav")
+        paired_files = zip(normal_audio_files, intervened_audio_files)
+
+        sdtw_results = (
+            delayed(run_pitch_var_sdtw)(
+                normal,
+                intervened,
+                person,
+                normal.stem[-3:],
+                gamma,
+            )
+            for normal, intervened in paired_files
+        )
+    sdtw_out = pll_exec(sdtw_results)
+    sdtw_out = merge_results(sdtw_out)
+    print(sdtw_out.head())
+    return sdtw_out
+
+
 def main(cfg_path: Path, n_jobs: int = -1, output_dir: Path = Path(here() / "results")) -> int:
     """
     Analyze the synchronization metrics.
@@ -219,6 +251,11 @@ def main(cfg_path: Path, n_jobs: int = -1, output_dir: Path = Path(here() / "res
         if "sdtw" in config.metrics_to_run:
             sdtw_out = run_sdtw_analysis(pll_exec, zarr_paths, all_pairs, all_chunks, config.sdtw_settings)
             sdtw_out.write_parquet(output_dir / "sdtw_results.parquet")
+
+        # Pitch variability analysis
+        if "sdtw_pitch_shifted" in config.metrics_to_run:
+            sdtw_out = run_pitch_var_analysis(pll_exec, config.bvh_audio_folder_paths, config.sdtw_settings.gamma)
+            sdtw_out.write_parquet(output_dir / "sdtw_pitch_shifted_results.parquet")
     return 0
 
 

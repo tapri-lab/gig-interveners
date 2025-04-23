@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Any, Dict, List, Optional, SupportsFloat, Tuple
 
-import einops
+import numpy as np
 from sklearn.preprocessing import StandardScaler
 import jax
 import pandas as pd
@@ -16,6 +16,8 @@ from rich.console import Console
 from rich.table import Table
 from rich_tools import table_to_df
 from sta import sdtw
+from tslearn.metrics import soft_dtw_alignment
+import librosa
 
 
 class ResultsTable:
@@ -94,6 +96,7 @@ class RQA:
         dist = r.distance_matrix("euclidean")
         rec_matrix = r.recurrence_matrix()
         threshold = r.threshold_from_recurrence_rate(dist, self.recurrence_rate)
+        entr = r.diag_entropy()
         return sync.rqa_metrics(rec_matrix), threshold
 
     def calculate_crqa_metrics(
@@ -223,3 +226,32 @@ def run_cross_person_sdtw(
         res_table.add_result("Distance", dist)
         results.append(res_table)
     return results
+
+
+def run_pitch_var_sdtw(
+    normal_audio_path: Path,
+    altered_audio_path: Path,
+    person: str,
+    chunk: str,
+    *,
+    gamma: float = 1.0,
+) -> ResultsTable:
+    res_table = ResultsTable(title=f"{person}-{chunk}")
+    res_table.add_metadata("person", person)
+    res_table.add_metadata("chunk", chunk)
+    res_table.add_metadata("normal_audio", normal_audio_path)
+    res_table.add_metadata("altered_audio", altered_audio_path)
+    y1, sr1 = librosa.load(normal_audio_path, sr=None)
+    y2, sr2 = librosa.load(altered_audio_path, sr=None)
+
+    f0_1 = librosa.yin(y1, fmin=librosa.note_to_hz("C2"), fmax=librosa.note_to_hz("C7"))
+    f0_2 = librosa.yin(y2, fmin=librosa.note_to_hz("C2"), fmax=librosa.note_to_hz("C7"))
+    f0_1 = f0_1[~np.isnan(f0_1)]
+    f0_2 = f0_2[~np.isnan(f0_2)]
+
+    path, sim = soft_dtw_alignment(f0_1, f0_2, gamma=gamma)
+    path2, sim2 = soft_dtw_alignment(f0_1, f0_1, gamma=gamma)
+    res_table.add_result("Distance_Intervened", sim)
+    res_table.add_result("Distance_Non_Intervened", sim2)
+
+    return res_table
