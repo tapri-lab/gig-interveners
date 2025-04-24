@@ -6,7 +6,6 @@ readme = "README.md"
 requires-python = ">=3.10"
 
 dependencies = [
-    "bpy>=4.0.0",
     "bvhio>=1.4.6",
     "ipython>=8.31.0",
     "ipywidgets>=8.1.5",
@@ -53,6 +52,7 @@ dependencies = [
     "lsprotocol>=2023.0.1",
     "cattrs>=24.1.3",
     "statsmodels>=0.14.4",
+    "pingouin>=0.5.5",
 ]
 
 
