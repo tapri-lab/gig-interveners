@@ -2,8 +2,8 @@
 
 import marimo
 
-__generated_with = "0.13.0"
-app = marimo.App(width="medium")
+__generated_with = "0.13.1"
+app = marimo.App(width="medium", app_title="Cross Results")
 
 with app.setup:
     import marimo as mo
@@ -16,8 +16,7 @@ with app.setup:
     from scipy.stats import ttest_rel, wilcoxon, shapiro
     import scipy.stats as stats
     import statsmodels.formula.api as smf
-
-    alt.data_transformers.enable("vegafusion")
+    import pingouin as pg
 
 
 @app.cell(hide_code=True)
@@ -35,7 +34,7 @@ def _():
     return (silence_file_path,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(silence_file_path):
     person_mapping = {
         "person1": "a",
@@ -70,6 +69,199 @@ def _():
 @app.cell(hide_code=True)
 def _():
     mo.md(r"""## Helper Functions""")
+    return
+
+
+@app.cell(hide_code=True)
+def _():
+    mo.md(r"""## Reading Files""")
+    return
+
+
+@app.cell(hide_code=True)
+def _():
+    mo.md(r"""## Normality Tests""")
+    return
+
+
+@app.cell(hide_code=True)
+def _():
+    mo.md(r"""## Error Plots""")
+    return
+
+
+@app.cell(hide_code=True)
+def _(crqa_metric_choice):
+    crqa_metric_choice
+    return
+
+
+@app.cell(hide_code=True)
+def _(crqa_metric_choice, joined, person_mapping):
+    joined_unpivot = joined.unpivot(
+        index=["Metric", "person", "pair", "chunk", "pair_chunk", "joint"],
+        on=["Value", "Value_right"],
+        variable_name="condition",
+        value_name=crqa_metric_choice.value,
+    ).with_columns(
+        pl.col("condition").replace({"Value": "Base", "Value_right": "Intervened"}),
+    )
+
+    crdf_agg = joined_unpivot.group_by(["person", "condition"]).agg(
+        pl.col(crqa_metric_choice.value).mean().alias("mean"),
+        pl.col(crqa_metric_choice.value).std().alias("std"),
+    )
+    crdf_agg = crdf_agg.with_columns(pl.col("person").replace(person_mapping).str.to_titlecase())
+    crdf_agg
+    return crdf_agg, joined_unpivot
+
+
+@app.cell(hide_code=True)
+def _(baseline_color, crdf_agg, crqa_metric_choice, intervened_color):
+    alt.theme.enable("ggplot2")
+    base = alt.Chart(crdf_agg).encode(
+        x=alt.X("person:N", title="Persons"),
+        y=alt.Y(
+            f"mean:Q",
+            title=f"{crqa_metric_choice.value.replace('_', ' ').title()}",
+        ),
+        color=alt.Color("condition:N", title="Condition").scale(range=[baseline_color, intervened_color]),
+        shape=alt.Shape("condition:N", title="Condition", legend=None),
+        strokeDash=alt.StrokeDash("condition:N", title="Condition", legend=None),
+    )
+
+    points = base.mark_point(filled=True, size=50)
+    lines = base.mark_line(point=False)
+    # For error bars, use separate chart but keep consistent encoding
+    error_bars = (
+        alt.Chart(crdf_agg)
+        .mark_errorbar(clip=True, ticks=True, size=25, thickness=3)
+        .encode(
+            x="person:N",
+            y=alt.Y(f"mean:Q", title="").scale(zero=False),
+            yError=alt.YError(f"std:Q"),
+            color=alt.Color("condition:N", title="Condition"),
+        )
+    )
+
+    chart_crqa = (
+        alt.layer(lines, points, error_bars)
+        .resolve_scale(y="shared")
+        .properties(width=500, height=400, title=f"CRQA - No Intervention vs Dampened")
+    )
+    chart_crqa.save(here() / f"results/plots/crqa_{crqa_metric_choice.value}_cross_error_bar.pdf")
+
+    mo.ui.altair_chart(chart_crqa)
+    return
+
+
+@app.cell
+def _(crqa_metric_choice, joined_unpivot):
+    sns.violinplot(
+        data=joined_unpivot.filter(pl.col(crqa_metric_choice.value) > 0),
+        x="person",
+        y=crqa_metric_choice.value,
+        hue="condition",
+        palette="Pastel1",
+    )
+    return
+
+
+@app.cell(hide_code=True)
+def _():
+    mo.md(r"""## LMEM""")
+    return
+
+
+@app.cell(hide_code=True)
+def _(crqa_metric_choice):
+    crqa_metric_choice
+    return
+
+
+@app.cell
+def _(crqa_metric_choice, joined):
+    # crqa_lmem_df = joined.with_columns(
+    #     pl.concat_str([pl.col("person1"), pl.col("person2")], separator="_").alias("pair"),
+    #     pl.concat_str([pl.col("person1"), pl.col("person2"), pl.col("chunk")], separator="_").alias("pair_chunk"),
+    # ).unique(subset=["pair_chunk", "Metric", "joint"], keep="first")
+    # crqa_lmem_df.melt(
+    #     id_vars=["Metric", "person1", "person2", "pair", "chunk", "joint"],
+    #     value_vars=["Value", "Value_right"],
+    #     variable_name="condition",
+    #     value_name=crqa_metric_choice.value,
+    # )
+    crqa_lmem_df = joined.unpivot(
+        index=["Metric", "person1", "person2", "pair", "chunk", "pair_chunk", "joint"],
+        on=["Value", "Value_right"],
+        variable_name="condition",
+        value_name=crqa_metric_choice.value,
+    ).with_columns(
+        pl.col("condition").replace({"Value": "raw", "Value_right": "damped"}).cast(pl.Categorical),
+        pl.col("joint").cast(pl.Categorical),
+        pl.col("pair").cast(pl.Categorical),
+        pl.col("pair_chunk").cast(pl.Categorical),
+        pl.col("Metric").cast(pl.Categorical),
+    )
+    crqa_lmem_df = crqa_lmem_df.filter(pl.col("joint").is_in(["LeftHand", "RightHand", "LeftArm", "RightArm"]))
+    crqa_lmem_df
+    return (crqa_lmem_df,)
+
+
+@app.cell
+def _(crqa_lmem_df, crqa_metric_choice):
+    model = smf.mixedlm(
+        f"{crqa_metric_choice.value} ~ condition * joint",
+        crqa_lmem_df.to_pandas(),
+        groups=crqa_lmem_df.to_pandas()["pair_chunk"],
+        re_formula="~1",
+        # vc_formula={"pair": "0 + C(pair)"},
+    )
+    return (model,)
+
+
+@app.cell
+def _(model):
+    result = model.fit(reml=False)
+    return (result,)
+
+
+@app.cell
+def _(crqa_metric_choice, result):
+    with open(here() / f"results/latex/crqa_{crqa_metric_choice.value}_lmem.tex", "w") as f2:
+        f2.write(result.summary().as_latex())
+    mo.md(result.summary().as_html())
+    return
+
+
+@app.cell(hide_code=True)
+def _():
+    mo.md(r"""## T-Test""")
+    return
+
+
+@app.cell
+def _(crqa_metric_choice, joined):
+    res_crqa = ttest_rel(
+        joined.filter(pl.col("Metric").eq(crqa_metric_choice.value)).select(pl.col("Value")).to_numpy(),
+        joined.filter(pl.col("Metric").eq(crqa_metric_choice.value)).select(pl.col("Value_right")).to_numpy(),
+    )
+    mo.md(f"**T-Test p-value:** {res_crqa.pvalue.item()}")
+    return
+
+
+@app.cell(hide_code=True)
+def _():
+    mo.md(r"""## Wilcoxon""")
+    return
+
+
+@app.cell
+def _(crqa_metric_choice, joined):
+    resw = wilcoxon(
+        joined.filter(pl.col("Metric").eq(crqa_metric_choice.value)).select(pl.col("deltas")).to_numpy(),
+    )
+    mo.md(f"**Wilcoxon p-value:** {resw.pvalue.item()}")
     return
 
 
@@ -116,23 +308,19 @@ def df_to_pairwise_mat(df: pl.DataFrame, n: int) -> np.ndarray:
 
 @app.cell(hide_code=True)
 def _():
-    mo.md(r"""## Base Results""")
-    return
-
-
-@app.cell(hide_code=True)
-def _():
     base_crqa_path = mo.ui.file_browser(
         initial_path=here() / "results/results_base/",
         selection_mode="file",
         label="Select the base CRQA file",
         filetypes=[".parquet"],
+        multiple=False,
     )
     intervened_crqa_path = mo.ui.file_browser(
         initial_path=here() / "results/",
         selection_mode="file",
         label="Select the Intervened CRQA file",
         filetypes=[".parquet"],
+        multiple=False,
     )
     mo.hstack([base_crqa_path, intervened_crqa_path])
     return base_crqa_path, intervened_crqa_path
@@ -166,31 +354,12 @@ def _(crdf_base, crqa_metric_choice):
 
 
 @app.cell
-def _(crdf_base, crqa_metric_choice):
-    sns.set_theme("paper")
-    # sns.set_style("whitegrid")
-    plt.style.use("ggplot")
-    heat_plot = crqa_plotter(crdf_base, 5, crqa_metric_choice.value)
-    fig = heat_plot.get_figure()
-    fig.savefig(here() / "results/results_base/crqa_pairwise_radius_base.png", dpi=300, bbox_inches="tight")
-    fig
-    return
-
-
-@app.cell
-def _(crqa_metric_choice, intervened_crqa_path):
+def _(intervened_crqa_path):
     intervened_crqa = pl.read_parquet(intervened_crqa_path.path(index=0))
     intervened_crqa = intervened_crqa.with_columns(
         pl.col("Value").cast(pl.Float32), pl.col("chunk").cast(pl.Int32), pl.col("Metric").str.replace(" ", "_")
     ).filter(pl.col("Value").is_not_nan())
-    crqa_plotter(intervened_crqa, 5, crqa_metric_choice.value)
     return (intervened_crqa,)
-
-
-@app.cell(hide_code=True)
-def _():
-    mo.md(r"""## Normality Tests""")
-    return
 
 
 @app.cell
@@ -249,183 +418,6 @@ def _(joined):
 
 @app.cell(hide_code=True)
 def _():
-    mo.md(r"""## Error Plots""")
-    return
-
-
-@app.cell(hide_code=True)
-def _(crqa_metric_choice):
-    crqa_metric_choice
-    return
-
-
-@app.cell(hide_code=True)
-def _(crqa_metric_choice, joined, person_mapping):
-    joined_unpivot = joined.unpivot(
-        index=["Metric", "person", "pair", "chunk", "pair_chunk", "joint"],
-        on=["Value", "Value_right"],
-        variable_name="condition",
-        value_name=crqa_metric_choice.value,
-    ).with_columns(
-        pl.col("condition").replace({"Value": "Base", "Value_right": "Intervened"}),
-    )
-
-    crdf_agg = joined_unpivot.group_by(["person", "condition"]).agg(
-        pl.col(crqa_metric_choice.value).mean().alias("mean"),
-        pl.col(crqa_metric_choice.value).std().alias("std"),
-    )
-    crdf_agg = crdf_agg.with_columns(pl.col("person").replace(person_mapping).str.to_titlecase())
-    crdf_agg
-    return crdf_agg, joined_unpivot
-
-
-@app.cell(hide_code=True)
-def _(baseline_color, crdf_agg, crqa_metric_choice, intervened_color):
-    alt.theme.enable("ggplot2")
-    base = alt.Chart(crdf_agg).encode(
-        x=alt.X("person:N", title="Persons"),
-        y=alt.Y(
-            f"mean:Q",
-            title=f"{crqa_metric_choice.value.replace('_', ' ').title()}",
-        ),
-        color=alt.Color("condition:N", title="Condition").scale(range=[baseline_color, intervened_color]),
-        shape=alt.Shape("condition:N", title="Condition", legend=None),
-        strokeDash=alt.StrokeDash("condition:N", title="Condition", legend=None),
-    )
-
-    points = base.mark_point(filled=True, size=50)
-    lines = base.mark_line(point=False)
-    # For error bars, use separate chart but keep consistent encoding
-    error_bars = (
-        alt.Chart(crdf_agg)
-        .mark_errorbar(clip=True, ticks=True, size=10, thickness=2)
-        .encode(
-            x="person:N",
-            y=alt.Y(f"mean:Q", title="").scale(zero=False),
-            yError=alt.YError(f"std:Q"),
-            color=alt.Color("condition:N", title="Condition"),
-        )
-    )
-
-    chart_crqa = (
-        alt.layer(lines, points, error_bars)
-        .resolve_scale(y="shared")
-        .properties(width=500, height=400, title=f"CRQA - No Intervention vs Dampened")
-    )
-
-    mo.ui.altair_chart(chart_crqa)
-    return
-
-
-@app.cell
-def _(crqa_metric_choice, joined_unpivot):
-    sns.violinplot(
-        data=joined_unpivot.filter(pl.col(crqa_metric_choice.value) > 0),
-        x="person",
-        y=crqa_metric_choice.value,
-        hue="condition",
-        palette="Pastel1",
-    )
-    return
-
-
-@app.cell(hide_code=True)
-def _():
-    mo.md(r"""## LMEM""")
-    return
-
-
-@app.cell(hide_code=True)
-def _(crqa_metric_choice):
-    crqa_metric_choice
-    return
-
-
-@app.cell(hide_code=True)
-def _(crqa_metric_choice, joined):
-    # crqa_lmem_df = joined.with_columns(
-    #     pl.concat_str([pl.col("person1"), pl.col("person2")], separator="_").alias("pair"),
-    #     pl.concat_str([pl.col("person1"), pl.col("person2"), pl.col("chunk")], separator="_").alias("pair_chunk"),
-    # ).unique(subset=["pair_chunk", "Metric", "joint"], keep="first")
-    # crqa_lmem_df.melt(
-    #     id_vars=["Metric", "person1", "person2", "pair", "chunk", "joint"],
-    #     value_vars=["Value", "Value_right"],
-    #     variable_name="condition",
-    #     value_name=crqa_metric_choice.value,
-    # )
-    crqa_lmem_df = joined.unpivot(
-        index=["Metric", "person1", "person2", "pair", "chunk", "pair_chunk", "joint"],
-        on=["Value", "Value_right"],
-        variable_name="condition",
-        value_name=crqa_metric_choice.value,
-    ).with_columns(
-        pl.col("condition").replace({"Value": "raw", "Value_right": "damped"}).cast(pl.Categorical),
-        pl.col("joint").cast(pl.Categorical),
-        pl.col("pair").cast(pl.Categorical),
-        pl.col("pair_chunk").cast(pl.Categorical),
-        pl.col("Metric").cast(pl.Categorical),
-    )
-    crqa_lmem_df
-    return (crqa_lmem_df,)
-
-
-@app.cell
-def _(crqa_lmem_df, crqa_metric_choice):
-    model = smf.mixedlm(
-        f"{crqa_metric_choice.value} ~ condition * joint",
-        crqa_lmem_df.to_pandas(),
-        groups=crqa_lmem_df.to_pandas()["pair_chunk"],
-        re_formula="~1",
-        # vc_formula={"pair": "0 + C(pair)"},
-    )
-    return (model,)
-
-
-@app.cell
-def _(model):
-    result = model.fit(reml=False)
-    return (result,)
-
-
-@app.cell
-def _(result):
-    mo.md(result.summary().as_html())
-    return
-
-
-@app.cell(hide_code=True)
-def _():
-    mo.md(r"""## T-Test""")
-    return
-
-
-@app.cell
-def _(crqa_metric_choice, joined):
-    res_crqa = ttest_rel(
-        joined.filter(pl.col("Metric").eq(crqa_metric_choice.value)).select(pl.col("Value")).to_numpy(),
-        joined.filter(pl.col("Metric").eq(crqa_metric_choice.value)).select(pl.col("Value_right")).to_numpy(),
-    )
-    mo.md(f"**T-Test p-value:** {res_crqa.pvalue.item()}")
-    return
-
-
-@app.cell(hide_code=True)
-def _():
-    mo.md(r"""## Wilcoxon""")
-    return
-
-
-@app.cell
-def _(crqa_metric_choice, joined):
-    resw = wilcoxon(
-        joined.filter(pl.col("Metric").eq(crqa_metric_choice.value)).select(pl.col("deltas")).to_numpy(),
-    )
-    mo.md(f"**Wilcoxon p-value:** {resw.pvalue.item()}")
-    return
-
-
-@app.cell(hide_code=True)
-def _():
     mo.md(r"""# Cross BC""")
     return
 
@@ -466,7 +458,7 @@ def _(cross_bc_base_path, cross_bc_int_path):
 
 @app.cell(hide_code=True)
 def _():
-    mo.md(r"""### Joined and Exploded Table""")
+    mo.md(r"""## Joined and Exploded Table""")
     return
 
 
@@ -502,11 +494,10 @@ def _(cross_bc_base, cross_bc_int):
         .explode("person_list")
         .rename({"person_list": "person"})
     )
-    bc_joined
     return (bc_joined,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(bc_joined, person_mapping, session1_silence):
     bc_silence = (
         bc_joined.with_columns(pl.col("person").replace(person_mapping))
@@ -522,7 +513,7 @@ def _(bc_joined, person_mapping, session1_silence):
     return (bc_silence,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(bc_silence):
     bc_agg = (
         bc_silence.filter(pl.col("is_silent").eq(False))
@@ -533,12 +524,17 @@ def _(bc_silence):
         )
         .with_columns(pl.col("condition").cast(pl.String), pl.col("person").str.to_uppercase())
     )
-    bc_agg
     return (bc_agg,)
 
 
-@app.cell
-def _(baseline_color, bc_agg, intervened_color):
+@app.cell(hide_code=True)
+def _():
+    mo.md(r"""## Error Bar Plot""")
+    return
+
+
+@app.cell(hide_code=True)
+def _(baseline_color, bc_agg, cross_bc_int_path, intervened_color):
     alt.theme.enable("ggplot2")
     bc_base = alt.Chart(bc_agg).encode(
         x=alt.X("person:N", title="Persons"),
@@ -556,7 +552,7 @@ def _(baseline_color, bc_agg, intervened_color):
     # For error bars, use separate chart but keep consistent encoding
     bc_error_bars = (
         alt.Chart(bc_agg)
-        .mark_errorbar(clip=True, ticks=True, size=10, thickness=2)
+        .mark_errorbar(clip=True, ticks=True, size=25, thickness=3)
         .encode(
             x="person:N",
             y=alt.Y(f"mean:Q", title="").scale(zero=False),
@@ -568,10 +564,40 @@ def _(baseline_color, bc_agg, intervened_color):
     chart_bc = (
         alt.layer(bc_lines, bc_points, bc_error_bars)
         .resolve_scale(y="shared")
-        .properties(width=500, height=400, title=f"Beat Consistency")
+        .properties(width=500, height=400, title=f"Beat Consistency - Cross Person").configure_title(fontSize=18)
     )
 
+    vs_title = "Audio_Delay" if "delay" in cross_bc_int_path.path(index=0).parent.name else "Visual_Delay"
+
+    chart_bc.save(here() / f"results/plots/{vs_title}_cross_beat_consistency.pdf")
     mo.ui.altair_chart(chart_bc)
+    return
+
+
+@app.cell(hide_code=True)
+def _():
+    mo.md(r"""## Wilcoxon""")
+    return
+
+
+@app.cell
+def _(bc_silence):
+    bc_wilcx = (
+        bc_silence.pivot(
+            index=["person", "chunk", "Metric", "pair", "pair_chunk", "is_silent", "person1", "person2"],
+            on="condition",
+        )
+        .with_columns((pl.col("Intervened") - pl.col("Base")).alias("deltas"))
+        .filter(pl.col("is_silent") == False)
+    )
+    pg.wilcoxon(bc_wilcx["Base"], bc_wilcx["Intervened"])
+    return (bc_wilcx,)
+
+
+@app.cell
+def _(bc_wilcx):
+    sns.set_theme()
+    pg.qqplot(bc_wilcx["deltas"].to_numpy())
     return
 
 
@@ -695,7 +721,7 @@ def _(joined_sdtw):
     return (joined_sdtw_agg,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(baseline_color, intervened_color, joined_sdtw_agg):
     alt.theme.enable("ggplot2")
     sdtw_base_chart = alt.Chart(joined_sdtw_agg).encode(
@@ -726,9 +752,9 @@ def _(baseline_color, intervened_color, joined_sdtw_agg):
     chart_sdtw = (
         alt.layer(sdtw_lines, sdtw_points, sdtw_error_bars)
         .resolve_scale(y="shared")
-        .properties(width=500, height=400, title=f"SoftDTW")
+        .properties(width=500, height=400, title=f"SoftDTW").configure_title(fontSize=18)
     )
-
+    chart_sdtw.save(here() / "results/plots/cross_sdtw.pdf")
     mo.ui.altair_chart(chart_sdtw)
     return
 
@@ -766,7 +792,47 @@ def _(sdtw_lmem_model):
 
 @app.cell(hide_code=True)
 def _(lmem_sdtw_res):
+    with open(here() / "results/latex/cross_sdtw_lmem.tex", "w") as f:
+        f.write(lmem_sdtw_res.summary().as_latex())
     mo.md(lmem_sdtw_res.summary().as_html())
+    return
+
+
+@app.cell(hide_code=True)
+def _():
+    mo.md(r"""## Wilcoxon""")
+    return
+
+
+@app.cell
+def _(joined_sdtw):
+    joined_sdtw
+    return
+
+
+@app.cell
+def _(joined_sdtw):
+    wilcx_csdtw = (
+        joined_sdtw.pivot(
+            index=["Metric", "person1", "person2", "joint", "chunk", "pair", "pair_chunk", "person", "is_silent"],
+            on="condition",
+        )
+        .filter(pl.col("is_silent") == False)
+        .select(["person", "Base", "Intervened"])
+        .with_columns((pl.col("Intervened") - pl.col("Base")).alias("deltas"))
+    )
+    return (wilcx_csdtw,)
+
+
+@app.cell
+def _(wilcx_csdtw):
+    pg.wilcoxon(wilcx_csdtw["Base"], wilcx_csdtw["Intervened"])
+    return
+
+
+@app.cell
+def _(wilcx_csdtw):
+    pg.qqplot(wilcx_csdtw["deltas"])
     return
 
 

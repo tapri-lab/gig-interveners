@@ -2,8 +2,8 @@
 
 import marimo
 
-__generated_with = "0.13.0"
-app = marimo.App(width="medium")
+__generated_with = "0.13.1"
+app = marimo.App(width="medium", app_title="Pitch Var Results")
 
 
 @app.cell
@@ -21,7 +21,20 @@ def _():
     from pyprojroot import here
     import altair as alt
     from scipy import stats
-    return Path, alt, here, librosa, mo, np, pl, sns, soft_dtw_alignment, stats
+    import pingouin as pg
+    return (
+        Path,
+        alt,
+        here,
+        librosa,
+        mo,
+        np,
+        pg,
+        pl,
+        plt,
+        sns,
+        soft_dtw_alignment,
+    )
 
 
 @app.cell
@@ -90,9 +103,12 @@ def _(res):
 
 @app.cell
 def _(Path, librosa):
-    y1, sr1 = librosa.load(Path("../data/Session_1/c/audio_chunks/c-clean_001.wav"), sr=None)
-    y2, sr2 = librosa.load(Path("../data/Session_1/c/shift_30hz/c-clean_001_shifted.wav"), sr=None)
-    return y1, y2
+    y1, sr1 = librosa.load(Path("../data/Session_1/c/shift_30hz/c-clean_001_shifted.wav"), sr=None)
+    # y2, sr2 = librosa.load(Path("../data/Session_1/b/shift_30hz/b-clean_001_shifted.wav"), sr=None)
+
+    y2, sr2 = librosa.load(Path("../data/Session_1/c/audio_chunks/c-clean_001.wav"), sr=None)
+    # y2, sr2 = librosa.load(Path("../data/Session_1/b/audio_chunks/b-clean_001.wav"), sr=None)
+    return sr1, sr2, y1, y2
 
 
 @app.cell
@@ -106,16 +122,30 @@ def _(librosa, np, y1, y2):
 
 
 @app.cell
+def _(librosa, plt, sr1, sr2, y1, y2):
+    fig, ax = plt.subplots(nrows=2, sharex=True)
+    librosa.display.waveshow(y1, sr=sr1, ax=ax[0])
+    librosa.display.waveshow(y2, sr=sr2, ax=ax[1])
+    plt.show()
+    return
+
+
+@app.cell
 def _(f0_1, f0_2, soft_dtw_alignment):
     path, sim = soft_dtw_alignment(f0_1, f0_2, gamma=1)
+    # path, sim = soft_dtw_alignment(y1, y2, gamma=1)
     sim
     return (path,)
 
 
 @app.cell
-def _(path, sns):
+def _(here, path, sns):
     sns.set_theme()
-    sns.heatmap(path, cmap="viridis", xticklabels=False, yticklabels=False)
+    axh = sns.heatmap(path[256:, 256:], cmap="viridis", xticklabels=False, yticklabels=False)
+    axh.set_title("Soft-DTW Alignment")
+    figh = axh.get_figure()
+    figh.savefig(here() / "results" / "plots" / f"soft_dtw_alignment_path.pdf")
+    axh
     return
 
 
@@ -200,7 +230,7 @@ def _(pl, sdtw_pitch_var_res):
 
 
 @app.cell
-def _(alt, baseline_color, intervened_color, mo, pitch_var_agg):
+def _(alt, baseline_color, here, intervened_color, mo, pitch_var_agg):
     alt.theme.enable("ggplot2")
     base = alt.Chart(pitch_var_agg).encode(
         x=alt.X("person:N", title="Persons"),
@@ -218,7 +248,7 @@ def _(alt, baseline_color, intervened_color, mo, pitch_var_agg):
     # For error bars, use separate chart but keep consistent encoding
     error_bars = (
         alt.Chart(pitch_var_agg)
-        .mark_errorbar(clip=True, ticks=True, size=10, thickness=3)
+        .mark_errorbar(clip=True, ticks=True, size=25, thickness=3)
         .encode(
             x="person:N",
             y=alt.Y(f"mean:Q", title="").scale(zero=False),
@@ -227,13 +257,13 @@ def _(alt, baseline_color, intervened_color, mo, pitch_var_agg):
         )
     )
 
-    chart_bc = (
+    chart = (
         alt.layer(lines, points, error_bars)
         .resolve_scale(y="shared")
-        .properties(width=500, height=400, title=f"No Intervention vs Pitch Variance Reduction")
+        .properties(width=500, height=400, title=f"No Intervention vs Pitch Variance Reduction").configure_title(fontSize=18)
     )
-    # chart_bc.save(here() / "results" / "plots" / f"bc_{vs_title.replace(' ', '_')}_error_bar_plot.pdf")
-    mo.ui.altair_chart(chart_bc)
+    chart.save(here() / "results" / "plots" / f"pitch_var_error_bar_plot.pdf")
+    mo.ui.altair_chart(chart)
     return
 
 
@@ -245,27 +275,24 @@ def _(mo):
 
 @app.cell
 def _(dist_int, dist_non_int, pl, sdtw_pitch_var_res):
-    wilcx = sdtw_pitch_var_res.pivot(index=["chunk", "person", "normal_audio", "altered_audio", "is_silent"], on=["Metric"]).filter(
-        pl.col("is_silent") == False
-    ).with_columns(
-        ((dist_int - dist_int.min()) / (dist_int.max() - dist_int.min())).alias("Int_Normalized_Value"),
-        ((dist_non_int - dist_non_int.min()) / (dist_non_int.max() - dist_non_int.min())).alias("Normalized_Value"),
-    ).with_columns(
-        (pl.col("Int_Normalized_Value") - pl.col("Normalized_Value")).alias("deltas"),
+    wilcx = (
+        sdtw_pitch_var_res.pivot(index=["chunk", "person", "normal_audio", "altered_audio", "is_silent"], on=["Metric"])
+        .filter(pl.col("is_silent") == False)
+        .with_columns(
+            ((dist_int - dist_int.min()) / (dist_int.max() - dist_int.min())).alias("Int_Normalized_Value"),
+            ((dist_non_int - dist_non_int.min()) / (dist_non_int.max() - dist_non_int.min())).alias("Normalized_Value"),
+        )
+        .with_columns(
+            (pl.col("Int_Normalized_Value") - pl.col("Normalized_Value")).alias("deltas"),
+        )
     )
     wilcx
     return (wilcx,)
 
 
 @app.cell(hide_code=True)
-def _(mo, stats, wilcx):
-    rw = stats.wilcoxon(wilcx.select("deltas").to_numpy())
-    mo.md(rf"""
-    | Type  | Value  |
-    |---|---|
-    | Wilcoxon-statistic  | {rw.statistic.item()}  |
-    | p-value  |  {rw.pvalue.item()} |
-    """)
+def _(pg, wilcx):
+    pg.wilcoxon(wilcx.select("Normalized_Value"), wilcx.select("Int_Normalized_Value"))
     return
 
 

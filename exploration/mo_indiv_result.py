@@ -2,8 +2,8 @@
 
 import marimo
 
-__generated_with = "0.13.0"
-app = marimo.App(width="medium")
+__generated_with = "0.13.1"
+app = marimo.App(width="medium", app_title="Individual Results")
 
 with app.setup:
     import marimo as mo
@@ -17,8 +17,7 @@ with app.setup:
     import numpy as np
     import statsmodels.formula.api as smf
     from scipy import stats
-
-    alt.data_transformers.enable("vegafusion")
+    import pingouin as pg
 
 
 @app.cell
@@ -64,7 +63,7 @@ def _(silence_df):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(silence_df):
     alt.theme.enable("default")
     silence_base = alt.Chart(
@@ -78,7 +77,9 @@ def _(silence_df):
     )
     silence_pie = silence_base.mark_arc(outerRadius=120)
     silence_text = silence_base.mark_text(radius=140, size=20).encode(text="person:N")
-    (silence_pie + silence_text).properties(title="Relative Amount of Time Spoken")
+    pie = (silence_pie + silence_text).properties(title="Relative Amount of Time Spoken")
+    pie.save(here() / "results" / "plots" / "silence_pie_chart.pdf")
+    pie
     return
 
 
@@ -114,13 +115,9 @@ def _(base_ijr_path, intervened_ijr_path):
 
 
 @app.cell(hide_code=True)
-def _(ijr_base):
-    rqa_metric_choice = mo.ui.dropdown.from_series(
-        ijr_base["Metric"],
-        label="Select RQA Metric",
-    )
-    rqa_metric_choice
-    return (rqa_metric_choice,)
+def _():
+    mo.md(r"""## Error Bar Plots""")
+    return
 
 
 @app.cell(hide_code=True)
@@ -142,6 +139,16 @@ def _(ijr_base, ijr_int, person_mapping, rqa_metric_choice):
     )
     ijr_joined_filtered
     return ijr_joined, ijr_joined_filtered
+
+
+@app.cell(hide_code=True)
+def _(ijr_base):
+    rqa_metric_choice = mo.ui.dropdown.from_series(
+        ijr_base["Metric"],
+        label="Select RQA Metric",
+    )
+    rqa_metric_choice
+    return (rqa_metric_choice,)
 
 
 @app.cell(hide_code=True)
@@ -172,7 +179,7 @@ def _(
     # For error bars, use separate chart but keep consistent encoding
     error_bars_ijr = (
         alt.Chart(ijr_agg)
-        .mark_errorbar(clip=True, ticks=True, size=10, thickness=2)
+        .mark_errorbar(clip=True, ticks=True, size=25, thickness=3)
         .encode(
             x="person:N",
             y=alt.Y(f"mean:Q", title="").scale(zero=False),
@@ -187,6 +194,8 @@ def _(
             width=500, height=400, title=f"{rqa_metric_choice.value.replace('_', ' ')} - No Intervention vs Intervention"
         )
     )
+
+    chart_ijr.save(here() / "results" / "plots" / f"{rqa_metric_choice.value.replace('_', '')}_indiv_error_bar_plot.pdf")
 
     mo.ui.altair_chart(chart_ijr)
     return
@@ -260,22 +269,6 @@ def _(baseline_color, intervened_color, rqa_metric_choice):
 
         chart = alt.layer(lines, points, error_bars).resolve_scale(y="shared").properties(width=500, height=400)
         return chart
-    return (error_bar_plotter,)
-
-
-@app.cell(hide_code=True)
-def _(rqa_metric_choice):
-    rqa_metric_choice
-    return
-
-
-@app.cell(hide_code=True)
-def _(error_bar_plotter, ijr_joined_filtered, rqa_metric_choice):
-    plot_rqa_err = error_bar_plotter(ijr_joined_filtered, rqa_metric_choice.value, domain=[0, 15]).properties(
-        title=f"{rqa_metric_choice.value.replace('_', ' ')} - No Intervention vs Intervention"
-    )
-    plot_rqa_err.save(here() / "results" / "plots" / f"{rqa_metric_choice.value}_indiv_err_plot.pdf")
-    mo.ui.altair_chart(plot_rqa_err)
     return
 
 
@@ -318,6 +311,12 @@ def _(rqa_lmem_res, rqa_metric_choice):
     return
 
 
+@app.cell
+def _(ijr_joined_filtered):
+    ijr_joined_filtered
+    return
+
+
 @app.cell(hide_code=True)
 def _():
     mo.md(r"""## Wilcoxon""")
@@ -332,15 +331,9 @@ def _(ijr_joined, rqa_metric_choice):
     return (wilcx_ijr,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(wilcx_ijr):
-    rw_ijr = stats.wilcoxon(wilcx_ijr.select("deltas").to_numpy())
-    mo.md(rf"""
-    | Type  | Value  |
-    |---|---|
-    | Wilcoxon-statistic  | {rw_ijr.statistic.item()}  |
-    | p-value  |  {rw_ijr.pvalue.item()} |
-    """)
+    pg.wilcoxon(wilcx_ijr.select("deltas").to_numpy())
     return
 
 
@@ -380,7 +373,7 @@ def _(base_bc_path, intervened_bc_path):
     return bfil_base, bfil_int
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(bfil_base, bfil_int, person_mapping, silence_df):
     bfil_joined = bfil_base.join(bfil_int, how="inner", on=["chunk", "person", "Metric"], suffix="_intervened")
     bfil_joined = bfil_joined.unpivot(
@@ -399,6 +392,14 @@ def _(bfil_base, bfil_int, person_mapping, silence_df):
     )
     bfil_joined
     return (bfil_joined,)
+
+
+@app.cell
+def _(bfil_joined):
+    bfil_joined.group_by(["condition"]).agg(
+        pl.col("Value").median(),
+    )
+    return
 
 
 @app.cell(hide_code=True)
@@ -441,7 +442,7 @@ def _(baseline_color, bfil_agg, intervened_bc_path, intervened_color):
     # For error bars, use separate chart but keep consistent encoding
     error_bars = (
         alt.Chart(df)
-        .mark_errorbar(clip=True, ticks=True, size=10, thickness=2)
+        .mark_errorbar(clip=True, ticks=True, size=25, thickness=3)
         .encode(
             x="person:N",
             y=alt.Y(f"mean:Q", title="").scale(zero=False),
@@ -453,7 +454,7 @@ def _(baseline_color, bfil_agg, intervened_bc_path, intervened_color):
     chart_bc = (
         alt.layer(lines, points, error_bars)
         .resolve_scale(y="shared")
-        .properties(width=500, height=400, title=f"Beat Consistency - No Intervention vs {vs_title}")
+        .properties(width=500, height=400, title=f"Beat Consistency - Individual (Self)").configure_title(fontSize=18)
     )
     chart_bc.save(here() / "results" / "plots" / f"bc_{vs_title.replace(' ', '_')}_error_bar_plot.pdf")
     mo.ui.altair_chart(chart_bc)
@@ -470,10 +471,9 @@ def _():
 def _(bfil_joined):
     pivot_bfil_joined = (
         bfil_joined.pivot(
-            index=["person", "chunk", "Metric"],
+            index=["person", "chunk", "Metric", "is_silent"],
             on=["condition"],
         )
-        .rename({"Value_Base": "Base", "Value_Intervened": "Intervened"})
         .with_columns(
             (pl.col("Intervened") - pl.col("Base")).alias("deltas"),
         )
@@ -483,55 +483,23 @@ def _(bfil_joined):
 
 @app.cell
 def _(pivot_bfil_joined):
-    sns.set_theme()
-    stats.probplot(
-        pivot_bfil_joined.select(pl.col("deltas")).to_numpy().squeeze(),
-        dist="norm",
-        plot=plt,
-    )
-    plt.show()
+    pg.qqplot(x=pivot_bfil_joined["deltas"])
     return
 
 
 @app.cell
 def _(pivot_bfil_joined):
-    alt.theme.enable("default")
-    b = (
-        alt.Chart(pivot_bfil_joined)
-        .transform_quantile("deltas", step=0.01, as_=["p", "v"])
-        .transform_calculate(uniform="quantileUniform(datum.p)", normal="quantileNormal(datum.p)")
-        .mark_point()
-        .encode(alt.Y("v:Q"))
+    pg.ttest(
+        pivot_bfil_joined["Base"].to_numpy(),
+        pivot_bfil_joined["Intervened"].to_numpy(),
+        paired=True,
     )
-
-    mo.ui.altair_chart(b.encode(x="uniform:Q") | b.encode(x="normal:Q"))
     return
 
 
 @app.cell
 def _(pivot_bfil_joined):
-    rt = stats.ttest_rel(
-        pivot_bfil_joined.select("Base").to_numpy(),
-        pivot_bfil_joined.select("Intervened").to_numpy(),
-    )
-    mo.md(rf"""
-    | Type  | Value  |
-    |---|---|
-    | T-statistic  | {rt.statistic.item()}  |
-    | p-value  |  {rt.pvalue.item()} |
-    """)
-    return
-
-
-@app.cell
-def _(pivot_bfil_joined):
-    rw = stats.wilcoxon(pivot_bfil_joined.select("deltas").to_numpy())
-    mo.md(rf"""
-    | Type  | Value  |
-    |---|---|
-    | Wilcoxon-statistic  | {rw.statistic.item()}  |
-    | p-value  |  {rw.pvalue.item()} |
-    """)
+    pg.wilcoxon(pivot_bfil_joined["Base"], pivot_bfil_joined["Intervened"])
     return
 
 

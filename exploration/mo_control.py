@@ -2,8 +2,8 @@
 
 import marimo
 
-__generated_with = "0.13.0"
-app = marimo.App(width="medium")
+__generated_with = "0.13.1"
+app = marimo.App(width="medium", app_title="Control Analysis")
 
 
 @app.cell
@@ -42,7 +42,10 @@ def _(here, pl):
 def _(asaq, mo):
     _df = mo.sql(
         f"""
-        select distinct "condition" from asaq
+        select distinct
+            "condition"
+        from
+            asaq
         """
     )
     return

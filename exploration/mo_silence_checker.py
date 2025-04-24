@@ -2,15 +2,14 @@
 
 import marimo
 
-__generated_with = "0.13.0"
-app = marimo.App(width="medium")
+__generated_with = "0.13.1"
+app = marimo.App(width="medium", app_title="Silence Checker")
 
 with app.setup:
     import marimo as mo
     import librosa
     import numpy as np
     from pathlib import Path
-    from scipy.io import wavfile
     from joblib import Parallel, delayed
     import polars as pl
     import os
@@ -22,17 +21,6 @@ def is_mostly_silent(audio_path, silence_threshold_db=-40.0):
     rms_db = librosa.amplitude_to_db([np.sqrt(np.mean(y**2))])[0]
     # print(f"RMS dB: {rms_db}")
     return rms_db < silence_threshold_db
-
-
-@app.function
-def is_mostly_silent2(filepath, silence_thresh=0.01):
-    sr, data = wavfile.read(filepath)
-    if data.ndim > 1:  # stereo to mono
-        data = data.mean(axis=1)
-    data = data / np.max(np.abs(data))  # normalize
-    rms = np.sqrt(np.mean(data**2))
-    print(f"RMS: {rms}")
-    return rms < silence_thresh
 
 
 @app.cell(hide_code=True)
