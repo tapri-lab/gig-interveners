@@ -279,7 +279,7 @@ def main(cfg_path: Path, n_jobs: int = -1, output_dir: Path = Path(here() / "res
             sdtw_out.write_parquet(output_dir / "sdtw_results.parquet")
         # Individual SDTW analysis
         if "indiv_motion_sdtw" in config.metrics_to_run:
-            indiv_sdtw_out = indiv_person_sdtw(pll_exec, zarr_paths, all_chunks)
+            indiv_sdtw_out = indiv_person_sdtw(pll_exec, config.bvh_audio_folder_paths, all_chunks)
             indiv_sdtw_out.write_parquet(output_dir / "indiv_motion_sdtw_results.parquet")
 
         # Pitch variability analysis
