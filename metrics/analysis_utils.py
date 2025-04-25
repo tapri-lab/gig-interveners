@@ -228,6 +228,33 @@ def run_cross_person_sdtw(
     return results
 
 
+def run_indiv_person_sdtw(
+    joint_data_normal: Dict[str, NDArray],
+    joint_data_altered: Dict[str, NDArray],
+    person: str,
+    chunk: str,
+    gamma: float = 0.01,
+):
+    results = []
+    s = jax.jit(SoftDTW(gamma=gamma))
+    scaler1 = StandardScaler()
+    scaler2 = StandardScaler()
+    for joint in joint_data_normal.keys():
+        res_table = ResultsTable(title=f"{person}-{joint}-{chunk}")
+        res_table.add_metadata("person", person)
+        res_table.add_metadata("joint", joint)
+        res_table.add_metadata("chunk", chunk)
+        pj1 = joint_data_normal[joint]
+        pj2 = joint_data_altered[joint]
+        pj1 = scaler1.fit_transform(pj1)
+        pj2 = scaler2.fit_transform(pj2)
+
+        dist = sdtw(s, pj1, pj2)
+        res_table.add_result("Distance", dist)
+        results.append(res_table)
+    return results
+
+
 def run_pitch_var_sdtw(
     normal_audio_path: Path,
     altered_audio_path: Path,

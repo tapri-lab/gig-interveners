@@ -11,6 +11,7 @@ from analysis_utils import (
     merge_results,
     run_cross_person_sdtw,
     run_pitch_var_sdtw,
+    run_indiv_person_sdtw,
 )
 from cmd_utils import Config, RQASettings, SDTWSettings, load_file_paths, read_zarr_into_dict
 from joblib.parallel import Parallel, delayed
@@ -144,7 +145,7 @@ def run_cross_beat_consistency_analysis(pll_exec: Parallel, df: pl.DataFrame, ou
     return bec_tables_cross
 
 
-def run_sdtw_analysis(
+def cross_person_sdtw(
     pll_exec: Parallel,
     zarr_paths: Dict[str, Path],
     all_pairs: List[Tuple[str, str]],
@@ -168,6 +169,31 @@ def run_sdtw_analysis(
     sdtw_out = merge_results(sdtw_out)
     print(sdtw_out.head())
     return sdtw_out
+
+
+def indiv_person_sdtw(
+    pll_exec: Parallel,
+    zarr_paths: Dict[str, Path],
+    all_chunks: List[str],
+):
+    people = zarr_paths.keys()
+    normal_zarrs = {person: zarr_paths[person]["normal"] for person in people}
+    altered_zarrs = {person: zarr_paths[person]["zarr"] for person in people}
+    indiv_sdtw_results = (
+        delayed(run_indiv_person_sdtw)(
+            read_zarr_into_dict(normal_zarrs, chunk),
+            read_zarr_into_dict(altered_zarrs, chunk),
+            person,
+            chunk,
+        )
+        for person in people
+        for chunk in all_chunks
+    )
+    indiv_sdtw_results = pll_exec(indiv_sdtw_results)
+    indiv_sdtw_results = [x for xs in indiv_sdtw_results for x in xs]
+    indiv_sdtw_results = merge_results(indiv_sdtw_results)
+    print(indiv_sdtw_results.head())
+    return indiv_sdtw_results
 
 
 def run_pitch_var_analysis(
@@ -249,8 +275,12 @@ def main(cfg_path: Path, n_jobs: int = -1, output_dir: Path = Path(here() / "res
 
         # SDTW analysis
         if "sdtw" in config.metrics_to_run:
-            sdtw_out = run_sdtw_analysis(pll_exec, zarr_paths, all_pairs, all_chunks, config.sdtw_settings)
+            sdtw_out = cross_person_sdtw(pll_exec, zarr_paths, all_pairs, all_chunks, config.sdtw_settings)
             sdtw_out.write_parquet(output_dir / "sdtw_results.parquet")
+        # Individual SDTW analysis
+        if "indiv_motion_sdtw" in config.metrics_to_run:
+            indiv_sdtw_out = indiv_person_sdtw(pll_exec, zarr_paths, all_chunks)
+            indiv_sdtw_out.write_parquet(output_dir / "indiv_motion_sdtw_results.parquet")
 
         # Pitch variability analysis
         if "sdtw_pitch_shifted" in config.metrics_to_run:
