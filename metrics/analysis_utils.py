@@ -235,6 +235,7 @@ def run_indiv_person_sdtw(
     chunk: str,
     gamma: float = 0.01,
 ):
+    ### This is not cross joint, just self joint
     results = []
     s = jax.jit(SoftDTW(gamma=gamma))
     scaler1 = StandardScaler()
@@ -250,7 +251,9 @@ def run_indiv_person_sdtw(
         pj2 = scaler2.fit_transform(pj2)
 
         dist = sdtw(s, pj1, pj2)
-        res_table.add_result("Distance", dist)
+        dist2 = sdtw(s, pj1, pj1)
+        res_table.add_result("Distance_Non_Intervened", dist2)
+        res_table.add_result("Distance_Intervened", dist)
         results.append(res_table)
     return results
 

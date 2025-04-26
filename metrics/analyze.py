@@ -179,10 +179,13 @@ def indiv_person_sdtw(
     people = zarr_paths.keys()
     normal_zarrs = {person: zarr_paths[person]["normal"] for person in people}
     altered_zarrs = {person: zarr_paths[person]["zarr"] for person in people}
+    print(normal_zarrs)
+    print(altered_zarrs)
+
     indiv_sdtw_results = (
         delayed(run_indiv_person_sdtw)(
-            read_zarr_into_dict(normal_zarrs, chunk),
-            read_zarr_into_dict(altered_zarrs, chunk),
+            read_zarr_into_dict(normal_zarrs, chunk)[person],
+            read_zarr_into_dict(altered_zarrs, chunk)[person],
             person,
             chunk,
         )
@@ -193,6 +196,7 @@ def indiv_person_sdtw(
     indiv_sdtw_results = [x for xs in indiv_sdtw_results for x in xs]
     indiv_sdtw_results = merge_results(indiv_sdtw_results)
     print(indiv_sdtw_results.head())
+    print(indiv_sdtw_results.shape)
     return indiv_sdtw_results
 
 
