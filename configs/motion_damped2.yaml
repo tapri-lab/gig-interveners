@@ -1,36 +1,30 @@
 base_data_path: "/home/ojas/data/dnd/Session_1/"
 metrics_to_run:
-  #  - indiv_rqa
-  #  - crqa
-  #  - beat_consistency
-  #  - sdtw
-  #  - cross_beat_consistency
-  - indiv_motion_sdtw
+  - indiv_rqa
+  - crqa
+  - beat_consistency
+  - sdtw
+  - cross_beat_consistency
 bvh_audio_folder_paths:
   person1:
     bvh: "${base_data_path}/a/a_d2/"
     zarr: "${base_data_path}/a/a_world_pos_d2.zip"
-    normal: "${base_data_path}/a/a_world_pos.zip"
     audio: "${base_data_path}/a/audio_segments/"
   person2:
     bvh: "${base_data_path}/c/c_d2/"
     zarr: "${base_data_path}/c/c_world_pos_d2.zip"
-    normal: "${base_data_path}/c/c_world_pos.zip"
     audio: "${base_data_path}/c/audio_segments/"
   person3:
     bvh: "${base_data_path}/b/b_d2/"
     zarr: "${base_data_path}/b/b_world_pos_d2.zip"
-    normal: "${base_data_path}/b/b_world_pos.zip"
     audio: "${base_data_path}/b/audio_segments/"
   person4:
     bvh: "${base_data_path}/j/j_d2/"
     zarr: "${base_data_path}/j/j_world_pos_d2.zip"
-    normal: "${base_data_path}/j/j_world_pos.zip"
     audio: "${base_data_path}/j/audio_segments/"
   person5:
     bvh: "${base_data_path}/l/l_d2/"
     zarr: "${base_data_path}/l/l_world_pos_d2.zip"
-    normal: "${base_data_path}/l/l_world_pos.zip"
     audio: "${base_data_path}/l/audio_segments/"
 rqa_settings:
   recurrence_rate: 0.02
@@ -47,3 +41,4 @@ emd_settings:
 
 sdtw_settings:
   cross_person: true
+  gamma: 1.0

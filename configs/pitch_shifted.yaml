@@ -1,34 +1,34 @@
 base_data_path: "/home/ojas/data/dnd/Session_1/"
 metrics_to_run:
-  - beat_consistency
-  - sdtw
-  - cross_beat_consistency
+  #  - beat_consistency
+  #- sdtw
+  #- cross_beat_consistency
   - sdtw_pitch_shifted
 bvh_audio_folder_paths:
   person1:  
     bvh: "${base_data_path}/a/a_chunks/"
     zarr: "${base_data_path}/a/a_world_pos.zip"
-    audio: "${base_data_path}/a/shift_30hz/"
+    audio: "${base_data_path}/a/shift_100hz/"
     normal_audio: "${base_data_path}/a/audio_segments/"
   person2:
     bvh: "${base_data_path}/c/c_chunks/"
     zarr: "${base_data_path}/c/c_world_pos.zip"
-    audio: "${base_data_path}/c/shift_30hz/"
+    audio: "${base_data_path}/c/shift_100hz/"
     normal_audio: "${base_data_path}/c/audio_segments/"
   person3:
     bvh: "${base_data_path}/b/b_chunks/"
     zarr: "${base_data_path}/b/b_world_pos.zip"
-    audio: "${base_data_path}/b/shift_30hz/"
+    audio: "${base_data_path}/b/shift_100hz/"
     normal_audio: "${base_data_path}/b/audio_segments/"
   person4:
     bvh: "${base_data_path}/j/j_chunks/"
     zarr: "${base_data_path}/j/j_world_pos.zip"
-    audio: "${base_data_path}/j/shift_30hz/"
+    audio: "${base_data_path}/j/shift_100hz/"
     normal_audio: "${base_data_path}/j/audio_segments/"
   person5:
     bvh: "${base_data_path}/l/l_chunks/"
     zarr: "${base_data_path}/l/l_world_pos.zip"
-    audio: "${base_data_path}/l/shift_30hz/"
+    audio: "${base_data_path}/l/shift_100hz/"
     normal_audio: "${base_data_path}/l/audio_segments/"
 rqa_settings:
   recurrence_rate: 0.02
