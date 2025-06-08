@@ -2,7 +2,7 @@
 
 import marimo
 
-__generated_with = "0.13.1"
+__generated_with = "0.13.2"
 app = marimo.App(width="medium", app_title="Individual Results")
 
 with app.setup:
@@ -24,6 +24,7 @@ with app.setup:
 def _():
     baseline_color = "#74BDCB"
     intervened_color = "#FFA384"
+    chunks_in_control = [0, 1, 3, 4, 5, 7, 8, 9, 11, 13]
     return baseline_color, intervened_color
 
 
@@ -59,7 +60,7 @@ def _(silence_file_path):
 def _(silence_df):
     alt.Chart(silence_df.with_columns(pl.col("is_silent").not_())).mark_bar().encode(
         x=alt.X("person:N"), y=alt.Y("sum(is_silent):Q")
-    ).properties(title="Silence Count")
+    ).properties(title="Speaking Count")
     return
 
 
@@ -75,9 +76,15 @@ def _(silence_df):
         color=alt.Color("person:N", title="Person"),
         theta=alt.Theta("sum(is_silent):Q").stack(True),
     )
-    silence_pie = silence_base.mark_arc(outerRadius=120)
+    silence_pie = silence_base.mark_arc(outerRadius=120, innerRadius=60)
     silence_text = silence_base.mark_text(radius=140, size=20).encode(text="person:N")
-    pie = (silence_pie + silence_text).properties(title="Relative Amount of Time Spoken")
+    silence_text2 = silence_base.mark_text(radius=160, size=20, dx=1).encode(text="sum(is_silent):Q")
+    pie = (
+        (silence_pie + silence_text + silence_text2)
+        .properties(title="Amount of Slices Spoken In")
+        .configure_title(fontSize=20)
+        .configure_legend(titleFontSize=18, labelFontSize=15)
+    )
     pie.save(here() / "results" / "plots" / "silence_pie_chart.pdf")
     pie
     return
@@ -121,6 +128,17 @@ def _():
 
 
 @app.cell(hide_code=True)
+def _(ijr_base):
+    rqa_metric_choice = mo.ui.dropdown.from_series(
+        ijr_base["Metric"],
+        label="Select RQA Metric",
+        value=ijr_base["Metric"].unique()[0],
+    )
+    rqa_metric_choice
+    return (rqa_metric_choice,)
+
+
+@app.cell(hide_code=True)
 def _(ijr_base, ijr_int, person_mapping, rqa_metric_choice):
     ijr_joined = ijr_base.join(ijr_int, how="inner", on=["chunk", "person", "joint", "Metric"], suffix="_intervened")
     ijr_joined_filtered = (
@@ -136,19 +154,10 @@ def _(ijr_base, ijr_int, person_mapping, rqa_metric_choice):
             pl.col("person").replace(person_mapping).str.to_uppercase(),
         )
         .filter(pl.col(f"{rqa_metric_choice.value}") > 0)
+        # .filter(pl.col("chunk").is_in(chunks_in_control))
     )
     ijr_joined_filtered
     return ijr_joined, ijr_joined_filtered
-
-
-@app.cell(hide_code=True)
-def _(ijr_base):
-    rqa_metric_choice = mo.ui.dropdown.from_series(
-        ijr_base["Metric"],
-        label="Select RQA Metric",
-    )
-    rqa_metric_choice
-    return (rqa_metric_choice,)
 
 
 @app.cell(hide_code=True)
@@ -164,10 +173,10 @@ def _(
         pl.col(f"{rqa_metric_choice.value}").std().alias("std"),
     )
     base_ijr = alt.Chart(ijr_agg).encode(
-        x=alt.X("person:N", title="Persons"),
+        x=alt.X("person:N", axis=alt.Axis(title="Persons", titleFontSize=22, labelFontSize=17, labelAngle=0)),
         y=alt.Y(
             f"mean:Q",
-            title=f"{rqa_metric_choice.value.replace('_', ' ')}",
+            axis=alt.Axis(title=f"{rqa_metric_choice.value.replace('_', ' ')}", titleFontSize=22, labelFontSize=17),
         ),
         color=alt.Color("condition:N", title="Condition").scale(range=[baseline_color, intervened_color]),
         shape=alt.Shape("condition:N", title="Condition", legend=None),
@@ -191,8 +200,14 @@ def _(
         alt.layer(lines_ijr, points_ijr, error_bars_ijr)
         .resolve_scale(y="shared")
         .properties(
-            width=500, height=400, title=f"{rqa_metric_choice.value.replace('_', ' ')} - No Intervention vs Intervention"
+            width=500,
+            height=400,
+            title=alt.TitleParams(
+                text=f"{rqa_metric_choice.value.replace('_', ' ')} - No Intervention vs Dampened", fontSize=24,
+                subtitle="Within Individual", subtitleFontSize=20
+            ),
         )
+        .configure_legend(titleFontSize=18, labelFontSize=15)
     )
 
     chart_ijr.save(here() / "results" / "plots" / f"{rqa_metric_choice.value.replace('_', '')}_indiv_error_bar_plot.pdf")
@@ -286,12 +301,12 @@ def _(rqa_metric_choice):
 
 @app.cell
 def _(ijr_joined_filtered, rqa_metric_choice):
-    tmp = ijr_joined_filtered.filter(pl.col("joint").is_in(["LeftHand", "RightHand", "LeftArm"])).to_pandas()
+    tmp = ijr_joined_filtered.filter(pl.col("joint").is_in(["LeftHand", "RightHand", "LeftArm", "RightArm"])).to_pandas()
     rqa_lmem_model = smf.mixedlm(
-        f"{rqa_metric_choice.value} ~  condition * joint",
+        f"{rqa_metric_choice.value} ~ C(condition,Treatment(reference='Base')) * C(joint,Treatment(reference='RightHand'))",
         tmp,
         groups=tmp["chunk"],
-        re_formula="~1",
+        re_formula="1",
         # vc_formula={"pair": "0 + C(pair)"},
     )
     return (rqa_lmem_model,)
@@ -312,8 +327,8 @@ def _(rqa_lmem_res, rqa_metric_choice):
 
 
 @app.cell
-def _(ijr_joined_filtered):
-    ijr_joined_filtered
+def _(rqa_lmem_res):
+    print(rqa_lmem_res.summary())
     return
 
 
@@ -389,6 +404,7 @@ def _(bfil_base, bfil_int, person_mapping, silence_df):
         bfil_joined.with_columns(pl.col("person").replace(person_mapping))
         .join(silence_df, how="left", on=["chunk", "person"])
         .with_columns(pl.col("is_silent").fill_null(False))
+        # .filter(pl.col("chunk").is_in(chunks_in_control))
     )
     bfil_joined
     return (bfil_joined,)
@@ -427,10 +443,10 @@ def _(baseline_color, bfil_agg, intervened_bc_path, intervened_color):
     alt.theme.enable("ggplot2")
     df = bfil_agg.with_columns(pl.col("person").str.to_titlecase())
     base = alt.Chart(df).encode(
-        x=alt.X("person:N", title="Persons"),
+        x=alt.X("person:N", axis=alt.Axis(title="Persons", titleFontSize=22, labelFontSize=17, labelAngle=0)),
         y=alt.Y(
             f"mean:Q",
-            title=f"Beat Consistency",
+            axis=alt.Axis(title=f"Beat Consistency", titleFontSize=22, labelFontSize=17),
         ),
         color=alt.Color("condition:N", title="Condition").scale(range=[baseline_color, intervened_color]),
         shape=alt.Shape("condition:N", title="Condition", legend=None),
@@ -450,15 +466,22 @@ def _(baseline_color, bfil_agg, intervened_bc_path, intervened_color):
             color=alt.Color("condition:N", title="Condition"),
         )
     )
-    vs_title = "Audio Delay" if "delay" in intervened_bc_path.path(index=0).parent.name else "Visual Delay"
+    vs_title = "Audio Delay" if "delay" in intervened_bc_path.path(index=0).parent.name else "Motion Dampened"
     chart_bc = (
         alt.layer(lines, points, error_bars)
         .resolve_scale(y="shared")
-        .properties(width=500, height=400, title=f"Beat Consistency - Individual (Self)").configure_title(fontSize=18)
+        .properties(
+            width=500,
+            height=400,
+            title=alt.TitleParams(
+                text=f"Beat Consistency - Individual", subtitle=vs_title, fontSize=24, subtitleFontSize=20
+            ),
+        )
+        .configure_legend(titleFontSize=19, labelFontSize=16)
     )
     chart_bc.save(here() / "results" / "plots" / f"bc_{vs_title.replace(' ', '_')}_error_bar_plot.pdf")
     mo.ui.altair_chart(chart_bc)
-    return
+    return (vs_title,)
 
 
 @app.cell(hide_code=True)
@@ -469,20 +492,18 @@ def _():
 
 @app.cell
 def _(bfil_joined):
-    pivot_bfil_joined = (
-        bfil_joined.pivot(
-            index=["person", "chunk", "Metric", "is_silent"],
-            on=["condition"],
-        )
-        .with_columns(
-            (pl.col("Intervened") - pl.col("Base")).alias("deltas"),
-        )
+    pivot_bfil_joined = bfil_joined.pivot(
+        index=["person", "chunk", "Metric", "is_silent"],
+        on=["condition"],
+    ).with_columns(
+        (pl.col("Intervened") - pl.col("Base")).alias("deltas"),
     )
     return (pivot_bfil_joined,)
 
 
 @app.cell
 def _(pivot_bfil_joined):
+    sns.set_theme()
     pg.qqplot(x=pivot_bfil_joined["deltas"])
     return
 
@@ -500,6 +521,181 @@ def _(pivot_bfil_joined):
 @app.cell
 def _(pivot_bfil_joined):
     pg.wilcoxon(pivot_bfil_joined["Base"], pivot_bfil_joined["Intervened"])
+    return
+
+
+@app.cell(hide_code=True)
+def _():
+    mo.md(r"""## LMEM""")
+    return
+
+
+@app.cell
+def _(bfil_joined):
+    bfil_lmem_df = (
+        bfil_joined.filter(pl.col("is_silent") == False)
+        .group_by(["person", "condition", "chunk"])
+        .agg(pl.col("Value").mean())
+    ).select(pl.exclude("is_silent"))
+    return (bfil_lmem_df,)
+
+
+@app.cell
+def _(bfil_lmem_df):
+    bc_lmem_model = smf.mixedlm(
+        f"Value ~  C(condition)",
+        bfil_lmem_df.to_pandas(),
+        groups=bfil_lmem_df["person"].to_pandas(),
+        re_formula="~1",
+        # vc_formula={"pair": "0 + C(pair)"},
+    )
+    return (bc_lmem_model,)
+
+
+@app.cell
+def _(bc_lmem_model):
+    rb = bc_lmem_model.fit(reml=True)
+    return (rb,)
+
+
+@app.cell
+def _(rb, vs_title):
+    with open(here() / f"results/latex/self_bc_{vs_title.replace(' ', '_')}_lmem.tex", "w") as fbc:
+        fbc.write(rb.summary().as_latex())
+
+    rb.summary()
+    return
+
+
+@app.cell
+def _(rb):
+    print(rb.summary())
+    return
+
+
+@app.cell(hide_code=True)
+def _():
+    mo.md(r"""# Individual SDTW""")
+    return
+
+
+@app.cell(hide_code=True)
+def _():
+    indiv_sdtw_path = mo.ui.file_browser(
+        initial_path=here() / "results/",
+        filetypes=[".parquet"],
+        selection_mode="file",
+        label="Select SDTW File",
+        multiple=False,
+    )
+    indiv_sdtw_path
+    return (indiv_sdtw_path,)
+
+
+@app.cell
+def _(indiv_sdtw_path):
+    indiv_sdtw_df = pl.read_parquet(indiv_sdtw_path.path(index=0))
+    indiv_sdtw_df = indiv_sdtw_df.with_columns(
+        pl.col("chunk").cast(pl.Int32),
+        pl.col("Value").cast(pl.Float32),
+        pl.col("Metric").replace({"Distance_Intervened": "Intervened", "Distance_Non_Intervened": "Base"}),
+    )
+    indiv_sdtw_df
+    return (indiv_sdtw_df,)
+
+
+@app.cell
+def _(indiv_sdtw_df, person_mapping):
+    indiv_sdtw_normalised = (
+        indiv_sdtw_df.filter(pl.col("joint").is_in(["LeftHand", "RightHand"]))
+        .filter(pl.col("Value").is_not_nan())
+        .with_columns(
+            ((pl.col("Value") - pl.col("Value").mean()) / pl.col("Value").std()),
+            pl.col("person").replace(person_mapping).str.to_uppercase(),
+        )
+        .pivot(
+            index=["chunk", "person", "joint"],
+            on=["Metric"],
+        )
+        .filter(pl.col("Intervened").is_not_nan())
+        .with_columns(
+            (pl.col("Intervened") - pl.col("Base")).alias("deltas"),
+        )
+    )
+    return (indiv_sdtw_normalised,)
+
+
+@app.cell
+def _(indiv_sdtw_normalised):
+    indiv_sdtw_pldf = indiv_sdtw_normalised.unpivot(
+        index=["chunk", "person", "joint"], variable_name="condition", on=["Base", "Intervened"]
+    )
+    indiv_sdtw_pldf = indiv_sdtw_pldf.group_by(["condition", "person"]).agg(
+        pl.col("value").mean().alias("mean"),
+        pl.col("value").std().alias("std"),
+    )
+    return (indiv_sdtw_pldf,)
+
+
+@app.cell(hide_code=True)
+def _():
+    mo.md(r"""## Error Bar Plot""")
+    return
+
+
+@app.cell(hide_code=True)
+def _(baseline_color, indiv_sdtw_pldf, intervened_color):
+    alt.theme.enable("ggplot2")
+
+    base_sdtw = alt.Chart(indiv_sdtw_pldf).encode(
+        x=alt.X("person:N", axis=alt.Axis(title="Persons", titleFontSize=22, labelFontSize=17, labelAngle=0)),
+        y=alt.Y(
+            f"mean:Q",
+            axis=alt.Axis(title=f"Normalised SDTW Distance", titleFontSize=22, labelFontSize=17),
+        ),
+        color=alt.Color("condition:N", title="Condition").scale(range=[baseline_color, intervened_color]),
+        shape=alt.Shape("condition:N", title="Condition", legend=None),
+        strokeDash=alt.StrokeDash("condition:N", title="Condition", legend=None),
+    )
+
+    points_sdtw = base_sdtw.mark_point(filled=True, size=60)
+    lines_sdtw = base_sdtw.mark_line(point=False)
+    # For error bars, use separate chart but keep consistent encoding
+    error_bars_sdtw = (
+        alt.Chart(indiv_sdtw_pldf)
+        .mark_errorbar(clip=True, ticks=True, size=25, thickness=3)
+        .encode(
+            x="person:N",
+            y=alt.Y(f"mean:Q", title="").scale(zero=False),
+            yError=alt.YError(f"std:Q"),
+            color=alt.Color("condition:N", title="Condition"),
+        )
+    )
+
+    chart_sdtw = (
+        alt.layer(lines_sdtw, points_sdtw, error_bars_sdtw)
+        .resolve_scale(y="shared")
+        .properties(
+            width=500,
+            height=400,
+            title=alt.TitleParams(text=f"SDTW Distances", fontSize=24, subtitle="Within Individual", subtitleFontSize=20),
+        )
+        .configure_legend(titleFontSize=18, labelFontSize=15)
+    )
+    chart_sdtw.save(here() / "results" / "plots" / f"sdtw_motion_damp_error_bar_plot.pdf")
+    mo.ui.altair_chart(chart_sdtw)
+    return
+
+
+@app.cell(hide_code=True)
+def _():
+    mo.md(r"""## Wilcoxon""")
+    return
+
+
+@app.cell
+def _(indiv_sdtw_normalised):
+    pg.wilcoxon(indiv_sdtw_normalised["Base"], indiv_sdtw_normalised["Intervened"])
     return
 
 

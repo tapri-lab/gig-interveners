@@ -2,7 +2,7 @@
 
 import marimo
 
-__generated_with = "0.13.1"
+__generated_with = "0.13.2"
 app = marimo.App(width="medium", app_title="Pitch Var Results")
 
 
@@ -233,11 +233,8 @@ def _(pl, sdtw_pitch_var_res):
 def _(alt, baseline_color, here, intervened_color, mo, pitch_var_agg):
     alt.theme.enable("ggplot2")
     base = alt.Chart(pitch_var_agg).encode(
-        x=alt.X("person:N", title="Persons"),
-        y=alt.Y(
-            f"mean:Q",
-            title=f"Normalized - SoftDTW Distance",
-        ),
+        x=alt.X("person:N", axis=alt.Axis(title="Persons", labelFontSize=13, titleFontSize=20)),
+        y=alt.Y(f"mean:Q", axis=alt.Axis(title="Normalized SDTW Distance", labelFontSize=13, titleFontSize=20)),
         color=alt.Color("condition:N", title="Condition").scale(range=[baseline_color, intervened_color]),
         shape=alt.Shape("condition:N", title="Condition", legend=None),
         strokeDash=alt.StrokeDash("condition:N", title="Condition", legend=None),
@@ -260,7 +257,9 @@ def _(alt, baseline_color, here, intervened_color, mo, pitch_var_agg):
     chart = (
         alt.layer(lines, points, error_bars)
         .resolve_scale(y="shared")
-        .properties(width=500, height=400, title=f"No Intervention vs Pitch Variance Reduction").configure_title(fontSize=18)
+        .properties(width=500, height=400, title=f"No Intervention vs Pitch Variance Reduction")
+        .configure_title(fontSize=20)
+        .configure_legend(titleFontSize=18, labelFontSize=15)
     )
     chart.save(here() / "results" / "plots" / f"pitch_var_error_bar_plot.pdf")
     mo.ui.altair_chart(chart)

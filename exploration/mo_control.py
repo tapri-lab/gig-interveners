@@ -2,7 +2,7 @@
 
 import marimo
 
-__generated_with = "0.13.1"
+__generated_with = "0.13.2"
 app = marimo.App(width="medium", app_title="Control Analysis")
 
 
@@ -42,6 +42,16 @@ def _(here, pl):
 def _(asaq, mo):
     _df = mo.sql(
         f"""
+        select count(distinct(subject)) from asaq
+        """
+    )
+    return
+
+
+@app.cell
+def _(asaq, mo):
+    _df = mo.sql(
+        f"""
         select distinct
             "condition"
         from
@@ -71,10 +81,10 @@ def _(alt, asaq_base, baseline_color):
         alt.Chart(asaq_base, width=400)
         .mark_bar(color=baseline_color)
         .encode(
-            x=alt.X("ordered_rating:O", title="Rating"),
-            y=alt.Y("count():Q", title="Count"),
+            x=alt.X("ordered_rating:O", axis=alt.Axis(title="Rating", titleFontSize=20, labelFontSize=18)),
+            y=alt.Y("count():Q", axis=alt.Axis(title="Count", titleFontSize=20, labelFontSize=18)),
         )
-        .properties(title="ASAQ Baseline on Videos")
+        .properties(title=alt.TitleParams(text="ASAQ Baseline on Videos", fontSize=24))
     )
     return (asaq_base_chart,)
 
@@ -98,10 +108,10 @@ def _(alt, asaq_gni, stick_color):
         alt.Chart(asaq_gni, width=400)
         .mark_bar(color=stick_color)
         .encode(
-            x=alt.X("ordered_rating:O", title="Rating"),
-            y=alt.Y("count():Q", title="Count"),
+            x=alt.X("ordered_rating:O", axis=alt.Axis(title="Rating", titleFontSize=20, labelFontSize=18)),
+            y=alt.Y("count():Q", axis=alt.Axis(title="Count", titleFontSize=20, labelFontSize=18)),
         )
-        .properties(title="ASAQ Non-Intervened")
+        .properties(title=alt.TitleParams(text="ASAQ Non-Intervened", fontSize=24))
     )
     return (asaq_gni_chart,)
 
@@ -159,11 +169,11 @@ def _(alt, baseline_color, pcq_base):
         alt.Chart(pcq_base, width=400)
         .mark_bar(color=baseline_color)
         .encode(
-            x=alt.X("ordered_rating:O", title="Rating"),
-            y=alt.Y("count():Q", title="Count"),
+            x=alt.X("ordered_rating:O", axis=alt.Axis(title="Rating", titleFontSize=20, labelFontSize=18)),
+            y=alt.Y("count():Q", axis=alt.Axis(title="Count", titleFontSize=20, labelFontSize=18)),
             # color=alt.Color("condition:N", title="Condition"),
         )
-        .properties(title="PCQ Baseline on Videos")
+        .properties(title=alt.TitleParams(text="PCQ Baseline on Videos", fontSize=24))
     )
     return (pcq_base_chart,)
 
@@ -181,10 +191,10 @@ def _(alt, pcq, pl, stick_color):
         alt.Chart(pcq_gni, width=400)
         .mark_bar(color=stick_color)
         .encode(
-            x=alt.X("ordered_rating:O", title="Rating"),
-            y=alt.Y("count():Q", title="Count"),
+            x=alt.X("ordered_rating:O", axis=alt.Axis(title="Rating", titleFontSize=20, labelFontSize=18)),
+            y=alt.Y("count():Q", axis=alt.Axis(title="Count", titleFontSize=20, labelFontSize=18)),
         )
-        .properties(title="PCQ Non-Intervened")
+        .properties(title=alt.TitleParams(text="PCQ Non-Intervened", fontSize=24))
     )
     return (pcq_gni_chart,)
 
