@@ -11,7 +11,7 @@ from aitviewer.renderables.skeletons import Skeletons
 from aitviewer.renderables.smpl import SMPLSequence
 from aitviewer.viewer import Viewer
 
-from kintree_constants import BODY_HAND_KINTREE, DND_BODY_HAND_KINTREE
+from kintree_constants import BODY_HAND_KINTREE
 from pyprojroot import here
 
 C.smplx_models = here() / "smplx"
@@ -19,9 +19,14 @@ C.window_type = "pyglet"
 C.auto_set_floor = False
 
 
-def load_in_aitviewier(
-    smpl_path: Path, kp_path: Path, csv_path: Path, frame_limit: int = 1000
-):  # pc_folder: Path, smpl_folder: Path):
+def load_in_aitviewier(smpl_path: Path, kp_path: Path, frame_limit: int = 1000):
+    """
+    Load SMPL sequences and keypoint data into AITViewer for visualization.
+    :param smpl_path: Path to the directory containing SMPL sequences in .npz format.
+    :param kp_path: Path to the directory containing keypoint data in .json format.
+    :param frame_limit: Maximum number of frames to load from each sequence. (only for SMPL sequences)
+    :return:
+    """
     smplx_layer = SMPLLayer(model_type="smplx", gender="neutral", device=C.device)
 
     # To load a SMPL layer (without X), use this poses_body_end and change the model_type above to "smpl"
@@ -74,23 +79,6 @@ def load_in_aitviewier(
 
     skeleton = add_body25_skeleton(points, icon="body25")
 
-    data_dnd_raw = np.genfromtxt(
-        csv_path,
-        delimiter=",",
-        max_rows=2,
-    )
-    data_dnd_raw = data_dnd_raw[:, 1:].reshape(-1, 67, 3)
-    data_dnd_raw = np.array(data_dnd_raw) / 1000  # mm to m
-    data_dnd = np.ones(data_dnd_raw.shape[0:1] + (63, 4))
-    data_dnd[:, 0, :3] = data_dnd_raw[:, 3]
-    data_dnd[:, 1:4, :3] = data_dnd_raw[:, :3]
-    data_dnd[:, 4:23, :3] = data_dnd_raw[:, 4:23]
-    data_dnd[:, 23:43, :3] = data_dnd_raw[:, 24:44, :3]
-    data_dnd[:, 43:63, :3] = data_dnd_raw[:, 46:66, :3]
-    skeleton_dnd = add_body25_skeleton(
-        data_dnd, icon="DnD", kintree=DND_BODY_HAND_KINTREE, color=(10 / 255, 1, 10 / 255, 1)
-    )
-
     # Add to scene and render
     v = Viewer()
 
@@ -101,7 +89,6 @@ def load_in_aitviewier(
         v.scene.add(pc_seq)
 
     v.scene.add(skeleton)
-    v.scene.add(skeleton_dnd)
 
     v.run()
 
