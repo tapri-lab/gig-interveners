@@ -19,7 +19,7 @@ C.window_type = "pyglet"
 C.auto_set_floor = False
 
 
-def load_in_aitviewier(smpl_path: Path, kp_path: Path, frame_limit: int = 1000):
+def load_in_aitviewer(smpl_path: Path, kp_path: Path, frame_limit: int = 1000):
     """
     Load SMPL sequences and keypoint data into AITViewer for visualization.
     :param smpl_path: Path to the directory containing SMPL sequences in .npz format.
@@ -119,7 +119,7 @@ def add_body25_skeleton(
 
 
 def main():
-    tyro.cli(load_in_aitviewier)
+    tyro.cli(load_in_aitviewer)
 
 
 if __name__ == "__main__":
