@@ -52,6 +52,7 @@ dependencies = [
     "cattrs>=24.1.3",
     "statsmodels>=0.14.4",
     "pingouin>=0.5.5",
+    "aitviewer>=1.13.0",
 ]
 
 
