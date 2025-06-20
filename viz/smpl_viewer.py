@@ -13,6 +13,8 @@ from aitviewer.viewer import Viewer
 
 from kintree_constants import BODY_HAND_KINTREE
 from pyprojroot import here
+from aitviewer.scene.camera import PinholeCamera
+from aitviewer.utils.path import lock_to_node
 
 C.smplx_models = here() / "smplx"
 C.window_type = "pyglet"
@@ -38,7 +40,7 @@ def load_in_aitviewer(smpl_path: Path, kp_path: Path, frame_limit: int = 1000):
     poses_left_hand_end = 40 * 3
     poses_right_hand_start = poses_left_hand_end
 
-    smpl_seqs = []
+    smpl_seqs = {}
 
     for root_str, _, files in list(os.walk(smpl_path)):
         root = Path(root_str)
@@ -48,8 +50,7 @@ def load_in_aitviewer(smpl_path: Path, kp_path: Path, frame_limit: int = 1000):
 
                 data = np.load(input_path)
 
-                smpl_seqs.append(
-                    SMPLSequence(
+                smpl_seqs[root.stem] = SMPLSequence(
                         smpl_layer=smplx_layer,
                         poses_body=data["poses"][:frame_limit, 3:poses_body_end],
                         poses_root=data["poses_root"][:frame_limit, :3],
@@ -58,7 +59,7 @@ def load_in_aitviewer(smpl_path: Path, kp_path: Path, frame_limit: int = 1000):
                         poses_left_hand=data["poses"][:frame_limit, poses_left_hand_start:poses_left_hand_end],
                         poses_right_hand=data["poses"][:frame_limit, poses_right_hand_start:],
                     )
-                )
+
 
     point_clouds = []
     points = []
@@ -81,9 +82,26 @@ def load_in_aitviewer(smpl_path: Path, kp_path: Path, frame_limit: int = 1000):
 
     # Add to scene and render
     v = Viewer()
-
-    for smpl_seq in smpl_seqs:
+    camera_rel_pos = {
+        "c": np.array([2, 1, 0]),
+        "a": np.array([2, 1, 2]),
+    }
+    for body, smpl_seq in smpl_seqs.items():
         v.scene.add(smpl_seq)
+        positions, targets = lock_to_node(smpl_seq, relative_position=camera_rel_pos[body], smooth_sigma=10.0)
+        cam = PinholeCamera(
+            position=positions,
+            target=targets,
+            cols=1280,
+            rows=720,
+            fov=60.0,
+        )
+        v.scene.add(cam)
+        v.set_temp_camera(cam)
+        v0 = smpl_seq.joints[0, 15]
+        v1 = smpl_seq.joints[0, 0]
+        d = v0 - v1
+        print(d / np.linalg.norm(d))
 
     for pc_seq in point_clouds:
         v.scene.add(pc_seq)
