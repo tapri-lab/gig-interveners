@@ -1,33 +1,35 @@
 import json
 import os
 from pathlib import Path
+from typing import Dict
 
 import numpy as np
+import torch
 import tyro
 from aitviewer.configuration import CONFIG as C
+from aitviewer.headless import HeadlessRenderer
 from aitviewer.models.smpl import SMPLLayer
 from aitviewer.renderables.point_clouds import PointClouds
 from aitviewer.renderables.skeletons import Skeletons
 from aitviewer.renderables.smpl import SMPLSequence
+from aitviewer.scene.camera import PinholeCamera
+from aitviewer.utils.so3 import aa2rot_torch
 from aitviewer.viewer import Viewer
-
 from kintree_constants import BODY_HAND_KINTREE
 from pyprojroot import here
-from aitviewer.scene.camera import PinholeCamera
-from aitviewer.utils.path import lock_to_node
+from scipy.ndimage import gaussian_filter1d
 
 C.smplx_models = here() / "smplx"
 C.window_type = "pyglet"
 C.auto_set_floor = False
 
 
-def load_in_aitviewer(smpl_path: Path, kp_path: Path, frame_limit: int = 1000):
+def collect_smpl_sequences(smpl_path: Path, frame_limit: int = 1000) -> Dict[str, SMPLSequence]:
     """
-    Load SMPL sequences and keypoint data into AITViewer for visualization.
+    Collect SMPL sequences from the specified path.
     :param smpl_path: Path to the directory containing SMPL sequences in .npz format.
-    :param kp_path: Path to the directory containing keypoint data in .json format.
-    :param frame_limit: Maximum number of frames to load from each sequence. (only for SMPL sequences)
-    :return:
+    :param frame_limit: Maximum number of frames to load from each sequence.
+    :return: Dictionary of SMPLSequence objects keyed by their directory names.
     """
     smplx_layer = SMPLLayer(model_type="smplx", gender="neutral", device=C.device)
 
@@ -41,8 +43,8 @@ def load_in_aitviewer(smpl_path: Path, kp_path: Path, frame_limit: int = 1000):
     poses_right_hand_start = poses_left_hand_end
 
     smpl_seqs = {}
-
-    for root_str, _, files in list(os.walk(smpl_path)):
+    # collect all SMPL sequences
+    for root_str, _, files in list(os.walk(smpl_path.expanduser())):
         root = Path(root_str)
         for filename in files:
             if filename.endswith(".npz"):
@@ -51,68 +53,177 @@ def load_in_aitviewer(smpl_path: Path, kp_path: Path, frame_limit: int = 1000):
                 data = np.load(input_path)
 
                 smpl_seqs[root.stem] = SMPLSequence(
-                        smpl_layer=smplx_layer,
-                        poses_body=data["poses"][:frame_limit, 3:poses_body_end],
-                        poses_root=data["poses_root"][:frame_limit, :3],
-                        betas=data["betas"][:frame_limit],
-                        trans=data["trans"][:frame_limit],
-                        poses_left_hand=data["poses"][:frame_limit, poses_left_hand_start:poses_left_hand_end],
-                        poses_right_hand=data["poses"][:frame_limit, poses_right_hand_start:],
-                    )
+                    smpl_layer=smplx_layer,
+                    poses_body=data["poses"][:frame_limit, 3:poses_body_end],
+                    poses_root=data["poses_root"][:frame_limit, :3],
+                    betas=data["betas"][:frame_limit],
+                    trans=data["trans"][:frame_limit],
+                    poses_left_hand=data["poses"][:frame_limit, poses_left_hand_start:poses_left_hand_end],
+                    poses_right_hand=data["poses"][:frame_limit, poses_right_hand_start:],
+                )
+    return smpl_seqs
 
 
-    point_clouds = []
-    points = []
-
-    for root_str, _, files in list(os.walk(kp_path)):
+def collect_kp_seqs(kp_path: Path) -> Dict[str, np.ndarray]:
+    points = {}
+    for root_str, _, files in list(os.walk(kp_path.expanduser())):
         root = Path(root_str)
+        points[root.stem] = []
         for filename in sorted(files):
             if filename.endswith(".json"):
                 input_path = root / filename
                 with open(input_path) as f:
                     data = json.load(f)
                     assert len(data) == 1  # Only one person
-                    points.append(data[0]["keypoints3d"])
+                    points[root.stem].append(data[0]["keypoints3d"])
+        points[root.stem] = np.array(points[root.stem])
+    return points
 
-    points = np.array(points)
 
-    point_clouds.append(PointClouds(points=points[:, :, :3]))
+def camera_positions_from_smpl(smpl_seq: SMPLSequence, sigma: float = 10.0) -> (np.ndarray, np.ndarray):
+    """
+    Calculate camera positions and targets based on SMPL sequence root positions and orientations.
+    :param smpl_seq: SMPLSequence object containing the SMPL data.
+    :param sigma: Smoothing factor for camera positions and targets.
+    :return: Tuple of camera positions and targets as numpy arrays.
+    """
+    root_positions = smpl_seq.trans
+    root_orientations_aa = smpl_seq.poses_root
+    root_orientations_rot = aa2rot_torch(root_orientations_aa.float())
 
-    skeleton = add_body25_skeleton(points, icon="body25")
+    # Define the standard forward vector (-Z axis).
+    forward_vec = torch.tensor([0.0, 0.0, -1.0]).float()
 
-    # Add to scene and render
+    # Rotate the forward vector by the root orientation for each frame.
+    forward_directions = torch.einsum("fab,b->fa", root_orientations_rot, forward_vec)
+
+    # Define the camera's distance and height relative to the model.
+    camera_distance = 3.0  # meters
+    camera_height = 0.5  # meters
+
+    # Calculate the camera position for each frame.
+    # We move the camera "behind" the model along the forward vector.
+    cam_positions = root_positions - camera_distance * forward_directions.numpy()
+    cam_positions[:, 1] += camera_height  # Adjust camera height
+    cam_positions = cam_positions.numpy()
+
+    # The camera should always look at the model's root.
+    cam_targets = root_positions
+    cam_targets = cam_targets.numpy()
+
+    if sigma > 0:
+        cam_positions = gaussian_filter1d(cam_positions, sigma=sigma, axis=0)
+        cam_targets = gaussian_filter1d(cam_targets, sigma=sigma, axis=0)
+    return cam_positions, cam_targets
+
+
+def render_smpl_sequences(
+    smpl_path: Path,
+    kp_path: Path,
+    frame_limit: int = 1000,
+    sigma: float = 10.0,
+    full_scene: bool = False,
+    skeleton: bool = True,
+):
+    """
+    Render SMPL sequences in headless mode using AITViewer.
+    :param smpl_path: Path to the directory containing SMPL sequences in .npz format.
+    :param frame_limit: Maximum number of frames to load from each sequence.
+    :param sigma: Smoothing factor for camera positions and targets. If > 0, applies Gaussian smoothing.
+    :param full_scene: If True, renders the full scene with all SMPL sequences in one video.
+    :return:
+    """
+    smpl_seqs = collect_smpl_sequences(smpl_path, frame_limit=frame_limit)
+    v = HeadlessRenderer()
+    v.scene.origin.enabled = False
+    v.scene.fps = 30
+    v.playback_fps = 30
+    points = collect_kp_seqs(kp_path.expanduser())
+
+    if skeleton:
+        for body, kp_seq in points.items():
+            v.scene.add(PointClouds(points=kp_seq[:, :, :3]))
+            skeleton = add_body25_skeleton(kp_seq, icon=f"body25_{body}")
+            v.scene.add(skeleton)
+            if not full_scene:
+                cam_positions, cam_targets = camera_positions_from_smpl(smpl_seqs[body], sigma=sigma)
+                cam = PinholeCamera(
+                    position=cam_positions,
+                    target=cam_targets,
+                    cols=1280,
+                    rows=720,
+                    fov=60.0,
+                )
+                v.scene.add(cam)
+                v.set_temp_camera(cam)
+                v.save_video(video_dir=os.path.join(here(), "export", f"headless/individual/skeleton/{body}.mp4"))
+            v.reset()
+    else:
+        for body, smpl_seq in smpl_seqs.items():
+            v.scene.add(smpl_seq)
+            if not full_scene:
+                cam_positions, cam_targets = camera_positions_from_smpl(smpl_seq, sigma=sigma)
+                cam = PinholeCamera(
+                    position=cam_positions,
+                    target=cam_targets,
+                    cols=1280,
+                    rows=720,
+                    fov=60.0,
+                )
+                v.scene.add(cam)
+                v.set_temp_camera(cam)
+                v.save_video(video_dir=os.path.join(here(), "export", f"headless/individual/smplx/{body}.mp4"))
+            v.reset()
+
+
+def view_in_aitviewer(smpl_path: Path, kp_path: Path, frame_limit: int = 1000, sigma: float = 10.0):
+    """
+    Load SMPL sequences and keypoint data into AITViewer for visualization.
+    :param smpl_path: Path to the directory containing SMPL sequences in .npz format.
+    :param kp_path: Path to the directory containing keypoint data in .json format.
+    :param frame_limit: Maximum number of frames to load from each sequence. (only for SMPL sequences)
+    :param sigma: Smoothing factor for cameras. If > 0, applies Gaussian smoothing to camera positions and targets.
+    :param headless: Run in headless mode (no GUI) - only for rendering.
+    :return:
+    """
+
+    smpl_seqs = collect_smpl_sequences(smpl_path, frame_limit=frame_limit)
     v = Viewer()
-    camera_rel_pos = {
-        "c": np.array([2, 1, 0]),
-        "a": np.array([2, 1, 2]),
-    }
+
+    points = collect_kp_seqs(kp_path)
+
+    for body, kp_seq in points.items():
+        v.scene.add(PointClouds(points=kp_seq[:, :, :3]))
+        skeleton = add_body25_skeleton(kp_seq, icon=f"body25_{body}")
+        v.scene.add(skeleton)
+
     for body, smpl_seq in smpl_seqs.items():
         v.scene.add(smpl_seq)
-        positions, targets = lock_to_node(smpl_seq, relative_position=camera_rel_pos[body], smooth_sigma=10.0)
+        smpl_seq.visible = False
+        cam_positions, cam_targets = camera_positions_from_smpl(smpl_seq, sigma=sigma)
+
+        if sigma > 0:
+            cam_positions = gaussian_filter1d(cam_positions, sigma=sigma, axis=0)
+            cam_targets = gaussian_filter1d(cam_targets, sigma=sigma, axis=0)
+
         cam = PinholeCamera(
-            position=positions,
-            target=targets,
+            position=cam_positions,
+            target=cam_targets,
             cols=1280,
             rows=720,
             fov=60.0,
         )
         v.scene.add(cam)
         v.set_temp_camera(cam)
-        v0 = smpl_seq.joints[0, 15]
-        v1 = smpl_seq.joints[0, 0]
-        d = v0 - v1
-        print(d / np.linalg.norm(d))
-
-    for pc_seq in point_clouds:
-        v.scene.add(pc_seq)
-
-    v.scene.add(skeleton)
 
     v.run()
 
 
 def add_body25_skeleton(
-    points: np.ndarray, icon="skeleton", kintree=BODY_HAND_KINTREE, color=(1.0, 0, 1 / 255, 1.0)
+    points: np.ndarray,
+    icon="skeleton",
+    kintree=BODY_HAND_KINTREE,
+    color=(1.0, 0, 1 / 255, 1.0),
 ) -> Skeletons:
     skeleton = Skeletons(
         joint_positions=points[:, :, :3],
@@ -137,7 +248,9 @@ def add_body25_skeleton(
 
 
 def main():
-    tyro.cli(load_in_aitviewer)
+    tyro.extras.subcommand_cli_from_dict(
+        {"view": view_in_aitviewer, "render": render_smpl_sequences},
+    )
 
 
 if __name__ == "__main__":
