@@ -123,7 +123,7 @@ def render_smpl_sequences(
     frame_limit: int = 1000,
     sigma: float = 10.0,
     full_scene: bool = False,
-    skeleton: bool = True,
+    skeleton: bool = False,
 ):
     """
     Render SMPL sequences in headless mode using AITViewer.
@@ -140,40 +140,32 @@ def render_smpl_sequences(
     v.playback_fps = 30
     points = collect_kp_seqs(kp_path.expanduser())
 
-    if skeleton:
-        for body, kp_seq in points.items():
-            v.scene.add(PointClouds(points=kp_seq[:, :, :3]))
-            skeleton = add_body25_skeleton(kp_seq, icon=f"body25_{body}")
-            v.scene.add(skeleton)
-            if not full_scene:
-                cam_positions, cam_targets = camera_positions_from_smpl(smpl_seqs[body], sigma=sigma)
-                cam = PinholeCamera(
-                    position=cam_positions,
-                    target=cam_targets,
-                    cols=1280,
-                    rows=720,
-                    fov=60.0,
+    for body, smpl_seq in smpl_seqs.items():
+        v.scene.add(smpl_seq)
+        if not full_scene:
+            cam_positions, cam_targets = camera_positions_from_smpl(smpl_seq, sigma=sigma)
+            cam = PinholeCamera(
+                position=cam_positions,
+                target=cam_targets,
+                cols=1280,
+                rows=720,
+                fov=60.0,
+            )
+            v.scene.add(cam)
+            v.set_temp_camera(cam)
+            if skeleton:
+                skeleton = add_body25_skeleton(
+                    points[body][:frame_limit],
+                    icon=f"body25_{body}",
+                    kintree=BODY_HAND_KINTREE,
                 )
-                v.scene.add(cam)
-                v.set_temp_camera(cam)
-                v.save_video(video_dir=os.path.join(here(), "export", f"headless/individual/skeleton/{body}.mp4"))
-            v.reset()
-    else:
-        for body, smpl_seq in smpl_seqs.items():
-            v.scene.add(smpl_seq)
-            if not full_scene:
-                cam_positions, cam_targets = camera_positions_from_smpl(smpl_seq, sigma=sigma)
-                cam = PinholeCamera(
-                    position=cam_positions,
-                    target=cam_targets,
-                    cols=1280,
-                    rows=720,
-                    fov=60.0,
-                )
-                v.scene.add(cam)
-                v.set_temp_camera(cam)
-                v.save_video(video_dir=os.path.join(here(), "export", f"headless/individual/smplx/{body}.mp4"))
-            v.reset()
+                v.scene.add(skeleton)
+                v.scene.get_node_by_name(smpl_seq.name).enabled = False
+            v.save_video(
+                video_dir=os.path.join(here(), "export", f"headless/individual/{'skeleton' if skeleton else 'smplx'}/{body}.mp4"),
+                output_fps=30,
+            )
+        v.reset()
 
 
 def view_in_aitviewer(smpl_path: Path, kp_path: Path, frame_limit: int = 1000, sigma: float = 10.0):
@@ -199,7 +191,7 @@ def view_in_aitviewer(smpl_path: Path, kp_path: Path, frame_limit: int = 1000, s
 
     for body, smpl_seq in smpl_seqs.items():
         v.scene.add(smpl_seq)
-        smpl_seq.visible = False
+        # v.scene.get_node_by_name(smpl_seq.name).enabled = False
         cam_positions, cam_targets = camera_positions_from_smpl(smpl_seq, sigma=sigma)
 
         if sigma > 0:
