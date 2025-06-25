@@ -1,12 +1,12 @@
+import os
 import re
 import subprocess
 import tempfile
 from pathlib import Path
 from typing import List
-import os
-import yaml
 
 import tyro
+import yaml
 
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 

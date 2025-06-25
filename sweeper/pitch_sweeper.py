@@ -10,42 +10,37 @@ import tyro
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 
 
-def run_delay_experiments(
-    offsets: List[float],
-    segment_length: float = 30.0,
-    base_config: Path = Path("configs/audio_delay.yaml"),
+def run_pitch_variance_experiments(
+    deviations: List[float],
+    base_config: Path = Path("configs/pitch_shifted.yaml"),
     n_jobs: int = -1,
     keep_configs: bool = False,
 ) -> None:
-    """Run delay analysis for multiple offsets.
+    """Run pitch variance analysis for multiple deviations.
 
     This helper will:
-    1. Generate delayed audio using ``batch_split_audio.sh``.
-    2. Create a temporary config with the correct audio paths.
-    3. Run ``metrics/analyze.py`` for each offset.
+    1. Generate pitch-limited audio using ``batch_limit_f0.sh``.
+    2. Create a temporary config with the correct folder names.
+    3. Run ``metrics/analyze.py`` for each deviation.
 
     Args:
-        offsets: List of offsets to test (in seconds).
-        segment_length: Segment length to pass to ``batch_split_audio.sh``.
-        base_config: Template config to modify. Should contain ``delay_m0.5`` as
-            the audio folder suffix which will be replaced per offset.
+        deviations: Maximum deviation values in Hz.
+        base_config: Template config containing a ``shift_30hz`` suffix that will be
+            replaced per deviation.
         n_jobs: Number of parallel jobs for ``metrics/analyze.py``.
         keep_configs: Whether to keep the generated config files.
     """
 
     base_config = Path(base_config)
     config_template = base_config.read_text()
-    match = re.search(r"delay_m[0-9.]+", config_template)
+    match = re.search(r"shift_[0-9]+hz", config_template)
     if not match:
-        raise ValueError("base config missing delay placeholder like 'delay_m0.5'")
+        raise ValueError("base config missing pitch placeholder like 'shift_30hz'")
     placeholder = match.group(0)
 
-    for offset in offsets:
-        suffix = f"delay_m{offset}"
-        subprocess.run(
-            ["./batch_split_audio.sh", str(segment_length), str(offset), suffix],
-            check=True,
-        )
+    for deviation in deviations:
+        suffix = f"shift_{deviation}hz"
+        subprocess.run(["./batch_limit_f0.sh", str(deviation), suffix], check=True)
 
         with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as tmp:
             tmp.write(config_template.replace(placeholder, suffix))
@@ -72,4 +67,4 @@ def run_delay_experiments(
 
 
 if __name__ == "__main__":
-    tyro.cli(run_delay_experiments)
+    tyro.cli(run_pitch_variance_experiments)
