@@ -6,13 +6,14 @@ __generated_with = "0.13.1"
 app = marimo.App(width="medium", app_title="Silence Checker")
 
 with app.setup:
-    import marimo as mo
-    import librosa
-    import numpy as np
-    from pathlib import Path
-    from joblib import Parallel, delayed
-    import polars as pl
     import os
+    from pathlib import Path
+
+    import librosa
+    import marimo as mo
+    import numpy as np
+    import polars as pl
+    from joblib import Parallel, delayed
 
 
 @app.function

@@ -11,16 +11,14 @@ def _():
 
     import jax
     import jax.numpy as jnp
-
     import matplotlib.pyplot as plt
-
     import ott
-    from ott.geometry import pointcloud, geometry
+    from ott.geometry import geometry, pointcloud
+    from ott.geometry.costs import SoftDTW
     from ott.problems.linear import linear_problem
     from ott.solvers import linear
     from ott.solvers.linear import sinkhorn
     from ott.tools import plot, sinkhorn_divergence
-    from ott.geometry.costs import SoftDTW
     return (
         Any,
         Callable,

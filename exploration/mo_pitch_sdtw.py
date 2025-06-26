@@ -8,20 +8,21 @@ app = marimo.App(width="medium", app_title="Pitch Var Results")
 
 @app.cell
 def _():
-    import marimo as mo
-    import librosa
-    import numpy as np
-    from ott.geometry.costs import SoftDTW
     from pathlib import Path
-    import parselmouth
-    from tslearn.metrics import soft_dtw, dtw, soft_dtw_alignment
-    import matplotlib.pyplot as plt
-    import seaborn as sns
-    import polars as pl
-    from pyprojroot import here
+
     import altair as alt
-    from scipy import stats
+    import librosa
+    import marimo as mo
+    import matplotlib.pyplot as plt
+    import numpy as np
+    import parselmouth
     import pingouin as pg
+    import polars as pl
+    import seaborn as sns
+    from ott.geometry.costs import SoftDTW
+    from pyprojroot import here
+    from scipy import stats
+    from tslearn.metrics import dtw, soft_dtw, soft_dtw_alignment
     return (
         Path,
         alt,

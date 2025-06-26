@@ -1,9 +1,9 @@
 from pathlib import Path
 from typing import Any, Dict, List, Optional, SupportsFloat, Tuple
 
-import numpy as np
-from sklearn.preprocessing import StandardScaler
 import jax
+import librosa
+import numpy as np
 import pandas as pd
 import polars as pl
 import synchronization as sync
@@ -15,9 +15,9 @@ from pyunicorn.timeseries.cross_recurrence_plot import CrossRecurrencePlot, Recu
 from rich.console import Console
 from rich.table import Table
 from rich_tools import table_to_df
+from sklearn.preprocessing import StandardScaler
 from sta import sdtw
 from tslearn.metrics import soft_dtw_alignment
-import librosa
 
 
 class ResultsTable:

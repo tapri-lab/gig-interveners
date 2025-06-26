@@ -10,8 +10,8 @@ from analysis_utils import (
     indiv_joint_level_recurrence,
     merge_results,
     run_cross_person_sdtw,
-    run_pitch_var_sdtw,
     run_indiv_person_sdtw,
+    run_pitch_var_sdtw,
 )
 from cmd_utils import Config, RQASettings, SDTWSettings, load_file_paths, read_zarr_into_dict
 from joblib.parallel import Parallel, delayed

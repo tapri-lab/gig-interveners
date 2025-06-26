@@ -2,17 +2,17 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import numpy as np
+import pymotion.rotations.quat as quat
 import yaml
 import zarr
 import zarr.storage
 from joblib import Parallel, delayed
+from pymotion.io.bvh import BVH
+from pymotion.ops.skeleton import fk
+from scipy.ndimage import gaussian_filter1d
 from tqdm.auto import tqdm, trange
 from tyro.extras import subcommand_cli_from_dict
 from wasabi import msg
-from pymotion.io.bvh import BVH
-import pymotion.rotations.quat as quat
-from scipy.ndimage import gaussian_filter1d
-from pymotion.ops.skeleton import fk
 
 
 def split_bvh_by_duration(input_bvh_path: Path, output_dir: Path, chunk_duration_sec: float = 30.0):

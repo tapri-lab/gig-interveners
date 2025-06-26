@@ -6,26 +6,25 @@ __generated_with = "0.13.0"
 app = marimo.App(width="medium")
 
 with app.setup:
-    import marimo as mo
-    import numpy as np
-    from scipy.signal import savgol_filter
+    from copy import deepcopy
+    from pathlib import Path
+    from typing import Dict, List, Optional, Union
+
     import bvhio
     import glm
-    from copy import deepcopy
-    from typing import Dict, Union, List
-    from pathlib import Path
-    from pyprojroot import here
-    import numpy as np
+    import marimo as mo
     import matplotlib.pyplot as plt
-    from typing import Optional
-    from scipy.ndimage import gaussian_filter1d
-    from pymotion.io.bvh import BVH
+    import numpy as np
     import pymotion.rotations.quat as quat
-    from pymotion.ops.skeleton import fk
-    from tqdm.auto import tqdm, trange
-    from ott.geometry.costs import SoftDTW
     import zarr
+    from ott.geometry.costs import SoftDTW
+    from pymotion.io.bvh import BVH
+    from pymotion.ops.skeleton import fk
+    from pyprojroot import here
+    from scipy.ndimage import gaussian_filter1d
+    from scipy.signal import savgol_filter
     from sklearn.preprocessing import StandardScaler
+    from tqdm.auto import tqdm, trange
     from tslearn.metrics import soft_dtw, soft_dtw_alignment
 
 

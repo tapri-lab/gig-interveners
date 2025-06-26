@@ -1,22 +1,20 @@
-
-
 import marimo
 
-__generated_with = "0.13.2"
-app = marimo.App(width="medium", app_title="Cross Results")
+__generated_with = "0.13.15"
+app = marimo.App(width="columns", app_title="Cross Results")
 
 with app.setup:
-    import marimo as mo
-    import polars as pl
     import altair as alt
+    import marimo as mo
     import matplotlib.pyplot as plt
-    import seaborn as sns
-    from pyprojroot import here
     import numpy as np
-    from scipy.stats import ttest_rel, wilcoxon, shapiro
-    import scipy.stats as stats
-    import statsmodels.formula.api as smf
     import pingouin as pg
+    import polars as pl
+    import scipy.stats as stats
+    import seaborn as sns
+    import statsmodels.formula.api as smf
+    from pyprojroot import here
+    from scipy.stats import shapiro, ttest_rel, wilcoxon
 
 
 @app.cell(hide_code=True)
@@ -309,9 +307,9 @@ def _(crqa_lmem_df, crqa_metric_choice):
         crqa_lmem_df,
         groups=crqa_lmem_df["pair_chunk"],
         re_formula="1",
-        # vc_formula={"pair": "0 + C(pair)"},
+        vc_formula={"pair": "0 + C(pair)"},
     )
-    result = model.fit(reml=True, method="lbfgs")
+    result = model.fit(reml=True)
     return (result,)
 
 
@@ -426,7 +424,7 @@ def _():
     cross_bc_int_path = mo.ui.file_browser(
         initial_path=here() / "results/",
         selection_mode="file",
-        label="Select the base Intervened Cross BC file",
+        label="Select the Intervened Cross BC file",
         filetypes=[".parquet"],
         multiple=False,
     )
@@ -437,9 +435,9 @@ def _():
 @app.cell(hide_code=True)
 def _(cross_bc_base_path, cross_bc_int_path):
     cross_bc_base = pl.read_parquet(cross_bc_base_path.path(index=0))
-    cross_bc_base = cross_bc_base.with_columns(pl.col("Value").cast(pl.Float32), pl.col("chunk").cast(pl.Int32)).filter(
-        pl.col("Value").is_not_nan()
-    )
+    cross_bc_base = cross_bc_base.with_columns(
+        pl.col("Value").cast(pl.Float32), pl.col("chunk").cast(pl.Int32), pl.lit(0).alias("strength").cast(pl.Float64)
+    ).filter(pl.col("Value").is_not_nan())
     cross_bc_int = pl.read_parquet(cross_bc_int_path.path(index=0))
     cross_bc_int = cross_bc_int.with_columns(pl.col("Value").cast(pl.Float32), pl.col("chunk").cast(pl.Int32)).filter(
         pl.col("Value").is_not_nan()
@@ -560,9 +558,13 @@ def _(baseline_color, bc_agg, cross_bc_int_path, intervened_color):
             width=500,
             height=400,
             title=alt.TitleParams(
-                text=f"Beat Consistency - Cross Person", fontSize=24, subtitle=vs_title.replace("_", " "), subtitleFontSize=20
+                text=f"Beat Consistency - Cross Person",
+                fontSize=24,
+                subtitle=vs_title.replace("_", " "),
+                subtitleFontSize=20,
             ),
-        ).configure_legend(titleFontSize=18, labelFontSize=15)
+        )
+        .configure_legend(titleFontSize=18, labelFontSize=15)
     )
 
     chart_bc.save(here() / f"results/plots/{vs_title}_cross_beat_consistency.pdf")
@@ -605,7 +607,11 @@ def _():
 
 @app.cell
 def _(bc_silence):
-    bc_lmem_df = bc_silence.group_by(["person", "condition", "pair", "pair_chunk", "chunk"]).agg(pl.col("Value").mean())
+    bc_lmem_df = (
+        bc_silence .filter(pl.col("is_silent").eq(False))
+        .group_by(["person", "condition", "pair", "pair_chunk", "chunk"])
+        .agg(pl.col("Value").mean())
+    )
     bc_lmem_df
     return (bc_lmem_df,)
 
@@ -616,7 +622,7 @@ def _(bc_lmem_df):
         f"Value ~ C(condition,Treatment(reference='Base'))",
         bc_lmem_df.to_pandas(),
         groups=bc_lmem_df.to_pandas()["pair_chunk"],
-        re_formula="1",
+        re_formula="~1",
         # vc_formula={"pair": "0 + C(pair)"},
     )
     return (bc_lmem_model,)
@@ -624,7 +630,7 @@ def _(bc_lmem_df):
 
 @app.cell
 def _(bc_lmem_model):
-    res_bc = bc_lmem_model.fit(reml=False, method="lbfgs")
+    res_bc = bc_lmem_model.fit(reml=0)
     return (res_bc,)
 
 
@@ -802,8 +808,11 @@ def _(baseline_color, intervened_color, joined_sdtw_agg):
         .properties(
             width=500,
             height=400,
-            title=alt.TitleParams(text=f"SoftDTW Distances", fontSize=24, subtitle="Between Individuals", subtitleFontSize=20),
-        ).configure_legend(titleFontSize=18, labelFontSize=15)
+            title=alt.TitleParams(
+                text=f"SoftDTW Distances", fontSize=24, subtitle="Between Individuals", subtitleFontSize=20
+            ),
+        )
+        .configure_legend(titleFontSize=18, labelFontSize=15)
     )
     chart_sdtw.save(here() / "results/plots/cross_sdtw.pdf")
     mo.ui.altair_chart(chart_sdtw)
@@ -890,6 +899,207 @@ def _(wilcx_csdtw):
 @app.cell
 def _(wilcx_csdtw):
     pg.qqplot(wilcx_csdtw["deltas"])
+    return
+
+
+@app.cell(hide_code=True)
+def _():
+    mo.md(r"""# Unified Model - Cross BC Audio Delay""")
+    return
+
+
+@app.cell
+def _(cross_bc_base_path):
+    all_cross_bc_paths = mo.ui.file_browser(initial_path=here() / "results/", filetypes=[".parquet"])
+    mo.hstack([all_cross_bc_paths, cross_bc_base_path])
+    return (all_cross_bc_paths,)
+
+
+@app.cell
+def _(all_cross_bc_paths):
+    def process_all_for_audio_delay():
+        tmp = []
+        for i in range(5):
+            p = all_cross_bc_paths.path(i)
+            delay = float(p.parent.name[-4:])
+            tmp.append(pl.read_parquet(p).with_columns(strength=pl.lit(delay), condition=pl.lit("Intervened")))
+        all_delays_df = (
+            pl.concat(tmp)
+            .with_columns(pl.col("Value").cast(pl.Float32), pl.col("chunk").cast(pl.Int32))
+            .filter(pl.col("Value").is_not_nan())
+        )
+        return all_delays_df
+    return (process_all_for_audio_delay,)
+
+
+@app.cell
+def _(cross_bc_base, process_all_for_audio_delay):
+    all_delays_df = process_all_for_audio_delay()
+    all_delays_df = pl.concat([cross_bc_base.with_columns(condition=pl.lit("Base")), all_delays_df])
+    all_delays_df
+    return (all_delays_df,)
+
+
+@app.cell
+def _(all_delays_df, person_mapping, session1_silence):
+    # Joining the results of the two dataframes for comparison
+    bc_joined_all_delays = (
+        all_delays_df.with_columns(
+            # adding a new column to get the unique pairs out
+            pl.concat_str([pl.col("person1"), pl.col("person2")], separator="_").alias("pair"),
+            pl.concat_str([pl.col("person1"), pl.col("person2"), pl.col("chunk")], separator="_").alias("pair_chunk"),
+        )
+        .unique(subset=["pair_chunk", "Metric", "condition", "strength"], keep="first")
+        .with_columns(
+            # adding a new column to get the unique rows associated to each person, allowing for summary stats calculation
+            pl.concat_list([pl.col("person1"), pl.col("person2")]).alias("person_list"),
+        )
+        .explode("person_list")
+        .rename({"person_list": "person"})
+        .with_columns(pl.col("person").replace(person_mapping))
+        .join(
+            session1_silence.with_columns(pl.col("chunk") - 1),
+            how="left",
+            left_on=["person", "chunk"],
+            right_on=["person", "chunk"],
+        )
+        .filter(pl.col("is_silent") == False)
+        .group_by(["person", "condition", "pair", "pair_chunk", "chunk", "strength"])
+        .agg(pl.col("Value").mean())
+        .with_columns(pl.col("strength").cast(pl.String))
+    )
+    return (bc_joined_all_delays,)
+
+
+@app.cell
+def _(bc_joined_all_delays):
+    bc_joined_all_delays
+    return
+
+
+@app.cell
+def _(bc_joined_all_delays):
+    bc_all_delay_lmem_model = smf.mixedlm(
+        f"Value ~ strength",
+        bc_joined_all_delays.to_pandas(),
+        groups=bc_joined_all_delays.to_pandas()["pair"],
+        re_formula="~1",
+        # vc_formula={"pair": "0 + C(pair)"},
+    )
+    return (bc_all_delay_lmem_model,)
+
+
+@app.cell
+def _(bc_all_delay_lmem_model):
+    res_all_bc = bc_all_delay_lmem_model.fit(reml=False)
+    return (res_all_bc,)
+
+
+@app.cell
+def _(res_all_bc):
+    res_all_bc.summary()
+    return
+
+
+@app.cell(hide_code=True)
+def _():
+    mo.md(r"""# Unified Model - Cross BC Dampening""")
+    return
+
+
+@app.cell
+def _(cross_bc_base_path):
+    all_cross_bc_damp_paths = mo.ui.file_browser(initial_path=here() / "results/", filetypes=[".parquet"])
+    mo.hstack([cross_bc_base_path, all_cross_bc_damp_paths])
+    return (all_cross_bc_damp_paths,)
+
+
+@app.cell
+def _(all_cross_bc_damp_paths):
+    def process_all_for_damp():
+        tmp = []
+        for i in range(5):
+            p = all_cross_bc_damp_paths.path(i)
+            delay = float(p.parent.name[-1:]) * 10
+            tmp.append(pl.read_parquet(p).with_columns(strength=pl.lit(delay), condition=pl.lit("Intervened")))
+        all_df = (
+            pl.concat(tmp)
+            .with_columns(pl.col("Value").cast(pl.Float32), pl.col("chunk").cast(pl.Int32))
+            .filter(pl.col("Value").is_not_nan())
+        )
+        return all_df
+    return (process_all_for_damp,)
+
+
+@app.cell
+def _(cross_bc_base, process_all_for_damp):
+    all_damp = process_all_for_damp()
+    all_damp = pl.concat([cross_bc_base.with_columns(condition=pl.lit("Base")), all_damp])
+    return (all_damp,)
+
+
+@app.cell
+def _(all_damp, person_mapping, session1_silence):
+    # Joining the results of the two dataframes for comparison
+    bc_joined_all_damp = (
+        all_damp.with_columns(
+            # adding a new column to get the unique pairs out
+            pl.concat_str([pl.col("person1"), pl.col("person2")], separator="_").alias("pair"),
+            pl.concat_str([pl.col("person1"), pl.col("person2"), pl.col("chunk")], separator="_").alias("pair_chunk"),
+        )
+        .unique(subset=["pair_chunk", "Metric", "condition", "strength"], keep="first")
+        .with_columns(
+            # adding a new column to get the unique rows associated to each person, allowing for summary stats calculation
+            pl.concat_list([pl.col("person1"), pl.col("person2")]).alias("person_list"),
+        )
+        .explode("person_list")
+        .rename({"person_list": "person"})
+        .with_columns(pl.col("person").replace(person_mapping))
+        .join(
+            session1_silence.with_columns(pl.col("chunk") - 1),
+            how="left",
+            left_on=["person", "chunk"],
+            right_on=["person", "chunk"],
+        )
+        .filter(pl.col("is_silent") == False)
+        .group_by(["person", "condition", "pair", "pair_chunk", "chunk", "strength"])
+        .agg(pl.col("Value").mean())
+    )
+    return (bc_joined_all_damp,)
+
+
+@app.cell
+def _(bc_joined_all_damp):
+    bc_joined_all_damp_lmem = bc_joined_all_damp.with_columns(pl.col("strength").cast(pl.String))
+    return (bc_joined_all_damp_lmem,)
+
+
+@app.cell
+def _(bc_joined_all_damp_lmem):
+    bc_all_damp_lmem_model = smf.mixedlm(
+        "Value ~ strength",
+        bc_joined_all_damp_lmem.to_pandas(),
+        groups=bc_joined_all_damp_lmem.to_pandas()["pair"],  # only dyad‐level intercept
+        re_formula="~1",  # drop random intercept here
+    )
+    return (bc_all_damp_lmem_model,)
+
+
+@app.cell
+def _(bc_all_damp_lmem_model):
+    res_all_damp_lmem = bc_all_damp_lmem_model.fit(reml=False)
+    return (res_all_damp_lmem,)
+
+
+@app.cell
+def _(res_all_damp_lmem):
+    res_all_damp_lmem.summary()
+    return
+
+
+@app.cell
+def _(bc_joined_all_damp_lmem):
+    smf.ols(formula="Value ~ C(condition) + C(strength)", data=bc_joined_all_damp_lmem.to_pandas()).fit().summary()
     return
 
 

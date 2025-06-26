@@ -6,19 +6,20 @@ app = marimo.App(width="medium")
 
 @app.cell
 def _():
+    import copy
+    from pathlib import Path
+
+    import einops
     import marimo as mo
+    import numpy as np
+    import scipy.signal
+    import scipy.spatial
+    import scipy.stats
+    import seaborn as sns
+    import zarr
     from pyunicorn.timeseries.cross_recurrence_plot import CrossRecurrencePlot
     from pyunicorn.timeseries.recurrence_plot import RecurrencePlot
-    import zarr
-    import seaborn as sns
-    import numpy as np
-    import scipy.spatial
-    import scipy.signal
-    import scipy.stats
-    import copy
     from sklearn.linear_model import LinearRegression
-    from pathlib import Path
-    import einops
     return (
         CrossRecurrencePlot,
         LinearRegression,

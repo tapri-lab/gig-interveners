@@ -6,17 +6,17 @@ app = marimo.App(width="medium")
 
 @app.cell
 def _():
-    import marimo as mo
-    import numpy as np
-    import numpy as np
-    import scipy.spatial
-    import scipy.signal
-    import scipy.stats
     import copy
-    from sklearn.linear_model import LinearRegression
-    import matplotlib.pyplot as plt
-    from mpl_toolkits.mplot3d import Axes3D
+
     import einops
+    import marimo as mo
+    import matplotlib.pyplot as plt
+    import numpy as np
+    import scipy.signal
+    import scipy.spatial
+    import scipy.stats
+    from mpl_toolkits.mplot3d import Axes3D
+    from sklearn.linear_model import LinearRegression
     return Axes3D, LinearRegression, copy, einops, mo, np, plt, scipy
 
 

@@ -8,11 +8,11 @@ app = marimo.App(width="medium", app_title="Control Analysis")
 
 @app.cell
 def _():
+    import altair as alt
     import marimo as mo
     import matplotlib.pyplot as plt
-    import altair as alt
-    import seaborn as sns
     import polars as pl
+    import seaborn as sns
     from pyprojroot import here
     return alt, here, mo, pl
 

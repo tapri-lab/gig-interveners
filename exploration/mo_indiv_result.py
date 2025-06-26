@@ -6,18 +6,19 @@ __generated_with = "0.13.2"
 app = marimo.App(width="medium", app_title="Individual Results")
 
 with app.setup:
-    import marimo as mo
-    import polars as pl
-    import matplotlib.pyplot as plt
-    import seaborn as sns
-    from pyprojroot import here
-    import altair as alt
-    import pandas as pd
     from typing import List
+
+    import altair as alt
+    import marimo as mo
+    import matplotlib.pyplot as plt
     import numpy as np
-    import statsmodels.formula.api as smf
-    from scipy import stats
+    import pandas as pd
     import pingouin as pg
+    import polars as pl
+    import seaborn as sns
+    import statsmodels.formula.api as smf
+    from pyprojroot import here
+    from scipy import stats
 
 
 @app.cell
