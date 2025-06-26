@@ -60,6 +60,7 @@ def collect_smpl_sequences(smpl_path: Path, frame_limit: int = 1000) -> Dict[str
                     trans=data["trans"][:frame_limit],
                     poses_left_hand=data["poses"][:frame_limit, poses_left_hand_start:poses_left_hand_end],
                     poses_right_hand=data["poses"][:frame_limit, poses_right_hand_start:],
+                    color=(22 / 255, 125 / 255, 127 / 255, 1.0),
                 )
     return smpl_seqs
 
@@ -68,6 +69,7 @@ def collect_kp_seqs(kp_path: Path) -> Dict[str, np.ndarray]:
     points = {}
     for root_str, _, files in list(os.walk(kp_path.expanduser())):
         root = Path(root_str)
+        print(root)
         points[root.stem] = []
         for filename in sorted(files):
             if filename.endswith(".json"):
@@ -92,7 +94,7 @@ def camera_positions_from_smpl(smpl_seq: SMPLSequence, sigma: float = 10.0) -> (
     root_orientations_rot = aa2rot_torch(root_orientations_aa.float())
 
     # Define the standard forward vector (-Z axis).
-    forward_vec = torch.tensor([0.0, 0.0, -1.0]).float()
+    forward_vec = torch.tensor([0.0, 0.0, -1.0]).float().to(C.device)
 
     # Rotate the forward vector by the root orientation for each frame.
     forward_directions = torch.einsum("fab,b->fa", root_orientations_rot, forward_vec)
@@ -103,13 +105,13 @@ def camera_positions_from_smpl(smpl_seq: SMPLSequence, sigma: float = 10.0) -> (
 
     # Calculate the camera position for each frame.
     # We move the camera "behind" the model along the forward vector.
-    cam_positions = root_positions - camera_distance * forward_directions.numpy()
+    cam_positions = root_positions.cpu() - camera_distance * forward_directions.cpu().numpy()
     cam_positions[:, 1] += camera_height  # Adjust camera height
-    cam_positions = cam_positions.numpy()
+    cam_positions = cam_positions.cpu().numpy()
 
     # The camera should always look at the model's root.
     cam_targets = root_positions
-    cam_targets = cam_targets.numpy()
+    cam_targets = cam_targets.cpu().numpy()
 
     if sigma > 0:
         cam_positions = gaussian_filter1d(cam_positions, sigma=sigma, axis=0)
@@ -136,12 +138,12 @@ def render_smpl_sequences(
     smpl_seqs = collect_smpl_sequences(smpl_path, frame_limit=frame_limit)
     v = HeadlessRenderer()
     v.scene.origin.enabled = False
-    v.scene.fps = 30
-    v.playback_fps = 30
     points = collect_kp_seqs(kp_path.expanduser())
 
     for body, smpl_seq in smpl_seqs.items():
         v.scene.add(smpl_seq)
+        v.scene.fps = 30
+        v.playback_fps = 30
         if not full_scene:
             cam_positions, cam_targets = camera_positions_from_smpl(smpl_seq, sigma=sigma)
             cam = PinholeCamera(
@@ -162,13 +164,17 @@ def render_smpl_sequences(
                 v.scene.add(skeleton)
                 v.scene.get_node_by_name(smpl_seq.name).enabled = False
             v.save_video(
-                video_dir=os.path.join(here(), "export", f"headless/individual/{'skeleton' if skeleton else 'smplx'}/{body}.mp4"),
+                video_dir=os.path.join(
+                    here(), "export", f"headless/individual/{'skeleton' if skeleton else 'smplx'}/{body}.mp4"
+                ),
                 output_fps=30,
             )
         v.reset()
 
 
-def view_in_aitviewer(smpl_path: Path, kp_path: Path, frame_limit: int = 1000, sigma: float = 10.0):
+def view_in_aitviewer(
+    smpl_path: Path, kp_path: Path, frame_limit: int = 1000, sigma: float = 10.0, skeleton: bool = False
+):
     """
     Load SMPL sequences and keypoint data into AITViewer for visualization.
     :param smpl_path: Path to the directory containing SMPL sequences in .npz format.
@@ -191,7 +197,9 @@ def view_in_aitviewer(smpl_path: Path, kp_path: Path, frame_limit: int = 1000, s
 
     for body, smpl_seq in smpl_seqs.items():
         v.scene.add(smpl_seq)
-        # v.scene.get_node_by_name(smpl_seq.name).enabled = False
+        # smpl_seq.mesh_seq.enabled = False
+        v.playback_fps = 30
+        v.scene.fps = 30
         cam_positions, cam_targets = camera_positions_from_smpl(smpl_seq, sigma=sigma)
 
         if sigma > 0:
