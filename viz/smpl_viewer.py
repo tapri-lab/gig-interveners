@@ -13,6 +13,7 @@ from aitviewer.renderables.point_clouds import PointClouds
 from aitviewer.renderables.skeletons import Skeletons
 from aitviewer.renderables.smpl import SMPLSequence
 from aitviewer.scene.camera import PinholeCamera
+from aitviewer.utils import path
 from aitviewer.utils.so3 import aa2rot_torch
 from aitviewer.viewer import Viewer
 from kintree_constants import BODY_HAND_KINTREE
@@ -139,7 +140,6 @@ def render_smpl_sequences(
     v = HeadlessRenderer()
     v.scene.origin.enabled = False
     points = collect_kp_seqs(kp_path.expanduser())
-
     for body, smpl_seq in smpl_seqs.items():
         v.scene.add(smpl_seq)
         v.scene.fps = 30
@@ -169,7 +169,7 @@ def render_smpl_sequences(
                 ),
                 output_fps=30,
             )
-        v.reset()
+            v.reset()
 
 
 def view_in_aitviewer(
@@ -189,6 +189,7 @@ def view_in_aitviewer(
     v = Viewer()
 
     points = collect_kp_seqs(kp_path)
+    root_trans = []
 
     for body, kp_seq in points.items():
         v.scene.add(PointClouds(points=kp_seq[:, :, :3]))
@@ -198,6 +199,7 @@ def view_in_aitviewer(
     for body, smpl_seq in smpl_seqs.items():
         v.scene.add(smpl_seq)
         # smpl_seq.mesh_seq.enabled = False
+        root_trans.append(smpl_seq.trans[0].cpu().numpy())
         v.playback_fps = 30
         v.scene.fps = 30
         cam_positions, cam_targets = camera_positions_from_smpl(smpl_seq, sigma=sigma)
@@ -214,7 +216,20 @@ def view_in_aitviewer(
             fov=60.0,
         )
         v.scene.add(cam)
-        v.set_temp_camera(cam)
+        # v.set_temp_camera(cam)
+    center = np.mean(root_trans, axis=0)
+    center[0] += 2  # Move the camera back a bit
+    center[1] += 0.5  # Raise the camera a bit
+    circle = path.circle(center=center, radius=4, num=int(314 * 2 * 4 / 10), start_angle=720, end_angle=0)
+    rotatating_cam = PinholeCamera(
+        circle,
+        center,
+        v.window_size[0],
+        v.window_size[1],
+        viewer=v,
+    )
+    v.scene.add(rotatating_cam)
+    v.set_temp_camera(rotatating_cam)
 
     v.run()
 
