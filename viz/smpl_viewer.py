@@ -1,7 +1,7 @@
 import json
 import os
 from pathlib import Path
-from typing import Dict
+from typing import Dict, List, Tuple
 
 import numpy as np
 import torch
@@ -19,13 +19,16 @@ from aitviewer.viewer import Viewer
 from kintree_constants import BODY_HAND_KINTREE
 from pyprojroot import here
 from scipy.ndimage import gaussian_filter1d
+import itertools
 
 C.smplx_models = here() / "smplx"
 C.window_type = "pyglet"
 C.auto_set_floor = False
 
 
-def collect_smpl_sequences(smpl_path: Path, frame_limit: int = 1000) -> Dict[str, SMPLSequence]:
+def collect_smpl_sequences(
+    smpl_path: Path, frame_limit: int = 1000
+) -> Tuple[Dict[str, SMPLSequence], List[np.ndarray]]:
     """
     Collect SMPL sequences from the specified path.
     :param smpl_path: Path to the directory containing SMPL sequences in .npz format.
@@ -44,6 +47,7 @@ def collect_smpl_sequences(smpl_path: Path, frame_limit: int = 1000) -> Dict[str
     poses_right_hand_start = poses_left_hand_end
 
     smpl_seqs = {}
+    root_trans = []
     # collect all SMPL sequences
     for root_str, _, files in list(os.walk(smpl_path.expanduser())):
         root = Path(root_str)
@@ -63,7 +67,8 @@ def collect_smpl_sequences(smpl_path: Path, frame_limit: int = 1000) -> Dict[str
                     poses_right_hand=data["poses"][:frame_limit, poses_right_hand_start:],
                     color=(22 / 255, 125 / 255, 127 / 255, 1.0),
                 )
-    return smpl_seqs
+                root_trans.append(smpl_seqs[root.stem].trans[500].cpu().numpy())
+    return smpl_seqs, root_trans
 
 
 def collect_kp_seqs(kp_path: Path) -> Dict[str, np.ndarray]:
@@ -125,7 +130,7 @@ def render_smpl_sequences(
     kp_path: Path,
     frame_limit: int = 1000,
     sigma: float = 10.0,
-    full_scene: bool = False,
+    global_scene: bool = False,
     skeleton: bool = False,
 ):
     """
@@ -133,18 +138,18 @@ def render_smpl_sequences(
     :param smpl_path: Path to the directory containing SMPL sequences in .npz format.
     :param frame_limit: Maximum number of frames to load from each sequence.
     :param sigma: Smoothing factor for camera positions and targets. If > 0, applies Gaussian smoothing.
-    :param full_scene: If True, renders the full scene with all SMPL sequences in one video.
+    :param global_scene: If True, renders the full scene with all SMPL sequences in one video.
     :return:
     """
-    smpl_seqs = collect_smpl_sequences(smpl_path, frame_limit=frame_limit)
+    smpl_seqs, root_trans = collect_smpl_sequences(smpl_path, frame_limit=frame_limit)
     v = HeadlessRenderer()
     v.scene.origin.enabled = False
     points = collect_kp_seqs(kp_path.expanduser())
-    for body, smpl_seq in smpl_seqs.items():
-        v.scene.add(smpl_seq)
-        v.scene.fps = 30
-        v.playback_fps = 30
-        if not full_scene:
+    if not global_scene:
+        for body, smpl_seq in smpl_seqs.items():
+            v.scene.add(smpl_seq)
+            v.scene.fps = 30
+            v.playback_fps = 30
             cam_positions, cam_targets = camera_positions_from_smpl(smpl_seq, sigma=sigma)
             cam = PinholeCamera(
                 position=cam_positions,
@@ -170,6 +175,40 @@ def render_smpl_sequences(
                 output_fps=30,
             )
             v.reset()
+    elif global_scene:
+        for body, smpl_seq in smpl_seqs.items():
+            v.scene.add(smpl_seq)
+            smpl_seq.color = (22 / 255, 125 / 255, 127 / 255, 1.0)
+            v.scene.fps = 30
+            v.playback_fps = 30
+        center = np.mean(root_trans, axis=0)
+        center[1] += 0.5  # Raise the camera a bit
+        r = 5
+        d = 8
+        gcam_pos = [
+            path.circle(center=center, radius=r, num=int(314 * 2 * r / d), start_angle=360, end_angle=i * 90)[-1]
+            for i in range(1, 5)
+        ]
+        global_cams = [
+            PinholeCamera(
+                pos,
+                center,
+                v.window_size[0],
+                v.window_size[1],
+                viewer=v,
+                fov=60.0,
+            )
+            for pos in gcam_pos
+        ]
+
+        for (idx, cam), (body, smpl_seq) in itertools.product(enumerate(global_cams), smpl_seqs.items()):
+            smpl_seq.color = (136 / 255, 123 / 255, 176 / 255, 1.0)
+            v.scene.add(cam)
+            v.set_temp_camera(cam)
+            v.save_video(
+                video_dir=os.path.join(here(), "export", "headless", "global", f"cam_{idx}_{body}.mp4"), output_fps=30
+            )
+            smpl_seq.color = (22 / 255, 125 / 255, 127 / 255, 1.0)
 
 
 def view_in_aitviewer(
@@ -185,7 +224,7 @@ def view_in_aitviewer(
     :return:
     """
 
-    smpl_seqs = collect_smpl_sequences(smpl_path, frame_limit=frame_limit)
+    smpl_seqs, _ = collect_smpl_sequences(smpl_path, frame_limit=frame_limit)
     v = Viewer()
 
     points = collect_kp_seqs(kp_path)
@@ -199,7 +238,7 @@ def view_in_aitviewer(
     for body, smpl_seq in smpl_seqs.items():
         v.scene.add(smpl_seq)
         # smpl_seq.mesh_seq.enabled = False
-        root_trans.append(smpl_seq.trans[0].cpu().numpy())
+        root_trans.append(smpl_seq.trans[500].cpu().numpy())
         v.playback_fps = 30
         v.scene.fps = 30
         cam_positions, cam_targets = camera_positions_from_smpl(smpl_seq, sigma=sigma)
@@ -218,18 +257,30 @@ def view_in_aitviewer(
         v.scene.add(cam)
         # v.set_temp_camera(cam)
     center = np.mean(root_trans, axis=0)
-    center[0] += 2  # Move the camera back a bit
+    center[0] += 0  # Move the camera back a bit
     center[1] += 0.5  # Raise the camera a bit
-    circle = path.circle(center=center, radius=4, num=int(314 * 2 * 4 / 10), start_angle=720, end_angle=0)
-    rotatating_cam = PinholeCamera(
-        circle,
-        center,
-        v.window_size[0],
-        v.window_size[1],
-        viewer=v,
-    )
-    v.scene.add(rotatating_cam)
-    v.set_temp_camera(rotatating_cam)
+    center[2] += 0
+    r = 5
+    d = 10
+
+    gcam_pos = [
+        path.circle(center=center, radius=r, num=int(314 * 2 * r / d), start_angle=360, end_angle=i * 90)[-1]
+        for i in range(1, 5)
+    ]
+    global_cams = [
+        PinholeCamera(
+            pos,
+            center,
+            v.window_size[0],
+            v.window_size[1],
+            viewer=v,
+            fov=60.0,
+        )
+        for pos in gcam_pos
+    ]
+
+    v.scene.add(*global_cams)
+    v.set_temp_camera(global_cams[3])
 
     v.run()
 
