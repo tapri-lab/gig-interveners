@@ -181,6 +181,14 @@ def render_smpl_sequences(
             smpl_seq.color = (22 / 255, 125 / 255, 127 / 255, 1.0)
             v.scene.fps = 30
             v.playback_fps = 30
+            if skeleton:
+                skeleton = add_body25_skeleton(
+                    points[body][:frame_limit],
+                    icon=f"body25_{body}",
+                    kintree=BODY_HAND_KINTREE,
+                )
+                v.scene.add(skeleton)
+                v.scene.get_node_by_name(smpl_seq.name).enabled = False
         center = np.mean(root_trans, axis=0)
         center[1] += 0.5  # Raise the camera a bit
         r = 5
