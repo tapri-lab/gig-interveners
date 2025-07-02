@@ -26,9 +26,6 @@ def main(raw_bvh: Path, output_dir: Path):
                 (output_dir / root.stem).mkdir(parents=True, exist_ok=True)
                 bvh.save(output_dir / root.stem / file)
 
-    bvh = BVH.from_file(raw_bvh)
-    bvh.save(output_dir / raw_bvh.name)
-
 
 if __name__ == "__main__":
     tyro.cli(main)
