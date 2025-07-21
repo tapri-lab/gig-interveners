@@ -116,7 +116,7 @@ def camera_positions_from_smpl(smpl_seq: SMPLSequence, sigma: float = 10.0) -> (
     forward_directions = torch.einsum("fab,b->fa", root_orientations_rot, forward_vec)
 
     # Define the camera's distance and height relative to the model.
-    camera_distance = 2.5  # meters
+    camera_distance = 2.0  # meters
     camera_height = 0.5  # meters
 
     # Calculate the camera position for each frame.
@@ -184,6 +184,7 @@ def render_smpl_sequences(
                     "headless",
                     "individual",
                     f"{'skeleton' if skeleton else 'smplx'}",
+                    body,
                     f"{body}.mp4",
                 ),
                 output_fps=30,
@@ -224,6 +225,8 @@ def render_smpl_sequences(
                     "headless",
                     "global",
                     "smplx" if not skeleton else "skeleton",
+                    f"cam_{idx}",
+                    body,
                     f"cam_{idx}_{body}.mp4",
                 ),
                 output_fps=30,
