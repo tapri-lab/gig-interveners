@@ -262,6 +262,7 @@ def view_in_aitviewer(
             v.scene.add(smpl_seq)
         v.scene.add(bvh_seqs[body])
         # smpl_seq.mesh_seq.enabled = False
+        bvh_seqs[body].color = (229 / 255, 91 / 255, 19 / 255, 1.0)
         v.playback_fps = 30
         # v.scene.fps = 30
         cam_positions, cam_targets = camera_positions_from_smpl(smpl_seq, sigma=sigma)
