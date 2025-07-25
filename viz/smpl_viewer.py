@@ -116,7 +116,7 @@ def camera_positions_from_smpl(smpl_seq: SMPLSequence, sigma: float = 10.0) -> (
     forward_directions = torch.einsum("fab,b->fa", root_orientations_rot, forward_vec)
 
     # Define the camera's distance and height relative to the model.
-    camera_distance = 2.0  # meters
+    camera_distance = 2.8  # meters
     camera_height = 0.5  # meters
 
     # Calculate the camera position for each frame.
@@ -165,8 +165,8 @@ def render_smpl_sequences(
             v.playback_fps = 30
             cam_positions, cam_targets = camera_positions_from_smpl(smpl_seq, sigma=sigma)
             cam = PinholeCamera(
-                position=cam_positions,
-                target=cam_targets,
+                position=cam_positions[400],
+                target=cam_targets[400],
                 cols=1280,
                 rows=720,
                 fov=60.0,
@@ -174,7 +174,7 @@ def render_smpl_sequences(
             v.scene.add(cam)
             v.set_temp_camera(cam)
             if skeleton:
-                bvh_seqs[body].color = (22 / 255, 125 / 255, 127 / 255, 1.0)
+                bvh_seqs[body].color = (229 / 255, 91 / 255, 19 / 255, 1.0)
                 v.scene.add(bvh_seqs[body])
                 v.scene.get_node_by_name(smpl_seq.name).enabled = False
             v.save_video(
@@ -211,11 +211,19 @@ def render_smpl_sequences(
             for i in range(1, 5)
         ]
         global_cams = [
-            PinholeCamera(pos, center, v.window_size[0], v.window_size[1], viewer=v, fov=60.0) for pos in gcam_pos
+            PinholeCamera(
+                pos + np.array([0, 0.5, 0]),  # Raise the camera a bit,
+                center,
+                v.window_size[0],
+                v.window_size[1],
+                viewer=v,
+                fov=60.0,
+            )
+            for pos in gcam_pos
         ]
 
         for (idx, cam), (body, smpl_seq) in itertools.product(enumerate(global_cams), smpl_seqs.items()):
-            smpl_seq.color = (136 / 255, 123 / 255, 176 / 255, 1.0)
+            smpl_seq.color = (229 / 255, 91 / 255, 19 / 255, 1.0)
             v.scene.add(cam)
             v.set_temp_camera(cam)
             v.save_video(
@@ -225,8 +233,8 @@ def render_smpl_sequences(
                     "headless",
                     "global",
                     "smplx" if not skeleton else "skeleton",
-                    f"cam_{idx}",
                     body,
+                    f"cam_{idx}",
                     f"cam_{idx}_{body}.mp4",
                 ),
                 output_fps=30,
@@ -267,13 +275,9 @@ def view_in_aitviewer(
         # v.scene.fps = 30
         cam_positions, cam_targets = camera_positions_from_smpl(smpl_seq, sigma=sigma)
 
-        if sigma > 0:
-            cam_positions = gaussian_filter1d(cam_positions, sigma=sigma, axis=0)
-            cam_targets = gaussian_filter1d(cam_targets, sigma=sigma, axis=0)
-
         cam = PinholeCamera(
-            position=cam_positions,
-            target=cam_targets,
+            position=cam_positions[400],
+            target=cam_targets[400],
             cols=1280,
             rows=720,
             fov=60.0,
@@ -293,18 +297,18 @@ def view_in_aitviewer(
     ]
     global_cams = [
         PinholeCamera(
-            pos,
+            pos + np.array([0, 0.5, 0]),  # Raise the camera a bit
             center,
             v.window_size[0],
             v.window_size[1],
             viewer=v,
-            fov=60.0,
+            fov=65.0,
         )
         for pos in gcam_pos
     ]
 
     v.scene.add(*global_cams)
-    # v.set_temp_camera(global_cams[3])
+    v.set_temp_camera(global_cams[3])
 
     v.run()
 
