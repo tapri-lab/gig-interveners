@@ -165,8 +165,8 @@ def render_smpl_sequences(
             v.playback_fps = 30
             cam_positions, cam_targets = camera_positions_from_smpl(smpl_seq, sigma=sigma)
             cam = PinholeCamera(
-                position=cam_positions[400],
-                target=cam_targets[400],
+                position=cam_positions[500],
+                target=cam_targets[500],
                 cols=1280,
                 rows=720,
                 fov=60.0,

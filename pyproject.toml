@@ -53,6 +53,7 @@ dependencies = [
     "statsmodels>=0.14.4",
     "pingouin>=0.5.5",
     "aitviewer>=1.13.0",
+    "ffmpeg-python>=0.2.0",
 ]
 
 
