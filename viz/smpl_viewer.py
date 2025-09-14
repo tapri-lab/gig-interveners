@@ -140,6 +140,7 @@ def render_smpl_sequences(
     bvh_path: Path,
     sigma: float = 10.0,
     global_scene: bool = False,
+    global_unified: bool = False,
     skeleton: bool = False,
     frame_range: List[int] = [0, 5000],
 ):
@@ -149,7 +150,8 @@ def render_smpl_sequences(
     :param bvh_path: Path to the directory containing BVH files for skeletons.
     :param smpl_path: Path to the directory containing SMPL sequences in .npz format.
     :param sigma: Smoothing factor for camera positions and targets. If > 0, applies Gaussian smoothing.
-    :param global_scene: If True, renders the full scene with all SMPL sequences in one video.
+    :param global_scene: If True, renders the full scene with all SMPL sequences in one video per camera-person pair.
+    :param global_unified: If True, renders the full scene with all SMPL sequences in one video per camera (all persons together).
     :param frame_range: Range of frames to render in the video.
     :return:
     """
@@ -158,7 +160,90 @@ def render_smpl_sequences(
     v.scene.origin.enabled = False
     bvh_seqs = collect_bvh_seqs(bvh_path=bvh_path)
 
-    if not global_scene:
+    if not global_scene and not global_unified:
+        for body, smpl_seq in smpl_seqs.items():
+            v.scene.add(smpl_seq)
+            v.scene.fps = 30
+            v.playback_fps = 30
+            cam_positions, cam_targets = camera_positions_from_smpl(smpl_seq, sigma=sigma)
+            cam = PinholeCamera(
+                position=cam_positions[500],
+                target=cam_targets[500],
+                cols=1280,
+                rows=720,
+                fov=60.0,
+            )
+            v.scene.add(cam)
+            v.set_temp_camera(cam)
+            if skeleton:
+                bvh_seqs[body].color = (229 / 255, 91 / 255, 19 / 255, 1.0)
+                v.scene.add(bvh_seqs[body])
+                v.scene.get_node_by_name(smpl_seq.name).enabled = False
+            v.save_video(
+                video_dir=os.path.join(
+                    here(),
+                    "export",
+                    "headless",
+                    "individual",
+                    f"{'skeleton' if skeleton else 'smplx'}",
+                    body,
+                    f"{body}.mp4",
+                ),
+                output_fps=30,
+                animation_range=frame_range,
+            )
+            v.reset()
+    elif global_unified:
+        # Add all sequences to the scene with consistent colors
+        for body, smpl_seq in smpl_seqs.items():
+            v.scene.add(smpl_seq)
+            smpl_seq.color = (22 / 255, 125 / 255, 127 / 255, 1.0)
+            v.scene.fps = 30
+            v.playback_fps = 30
+            if skeleton:
+                bvh_seqs[body].color = (22 / 255, 125 / 255, 127 / 255, 1.0)
+                v.scene.add(bvh_seqs[body])
+                v.scene.get_node_by_name(smpl_seq.name).enabled = False
+
+        # Set up cameras
+        center = np.mean(root_trans, axis=0)
+        center[1] += 0.5  # Raise the camera a bit
+        r = 5
+        d = 8
+        gcam_pos = [
+            path.circle(center=center, radius=r, num=int(314 * 2 * r / d), start_angle=360, end_angle=i * 90)[-1]
+            for i in range(1, 5)
+        ]
+        global_cams = [
+            PinholeCamera(
+                pos + np.array([0, 0.5, 0]),  # Raise the camera a bit,
+                center,
+                v.window_size[0],
+                v.window_size[1],
+                viewer=v,
+                fov=60.0,
+            )
+            for pos in gcam_pos
+        ]
+
+        # Render once per camera (not per camera-person pair)
+        for idx, cam in enumerate(global_cams):
+            v.scene.add(cam)
+            v.set_temp_camera(cam)
+            v.save_video(
+                video_dir=os.path.join(
+                    here(),
+                    "export",
+                    "headless",
+                    "global_unified",
+                    "smplx" if not skeleton else "skeleton",
+                    f"cam_{idx}",
+                    f"cam_{idx}_all.mp4",
+                ),
+                output_fps=30,
+                animation_range=frame_range,
+            )
+    elif global_scene:
         for body, smpl_seq in smpl_seqs.items():
             v.scene.add(smpl_seq)
             v.scene.fps = 30
