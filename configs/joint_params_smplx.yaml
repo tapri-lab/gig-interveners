@@ -1,0 +1,17 @@
+joint_params:
+  right_wrist: 
+    damping_factor: 0.9
+    sigma: 20
+    iterations: 8
+  right_elbow: 
+    damping_factor: 0.9
+    sigma: 20
+    iterations: 8
+  left_wrist: 
+    damping_factor: 0.9
+    sigma: 20
+    iterations: 8
+  left_elbow: 
+    damping_factor: 0.9
+    sigma: 20
+    iterations: 8

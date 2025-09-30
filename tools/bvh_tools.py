@@ -188,8 +188,8 @@ def dampener(input_path: Path, config_path: Path, output_path: Path, n_jobs: int
 
 def dampen_smpl_parameters(
     input_npz_path: Path,
-    output_npz_path: Path,
     joint_params: Dict,
+    output_dir: Path,
     smooth_trans: bool = False,
 ):
     """
@@ -197,70 +197,70 @@ def dampen_smpl_parameters(
 
     Args:
         input_npz_path: Path to input NPZ file with SMPLX parameters.
-        output_npz_path: Path to save the smoothed NPZ file.
-        joint_params: Dictionary with joint names (e.g., 'RightHand') and their params (must include 'sigma').
+        joint_params: Dictionary with joint names (e.g., 'right_wrist') and their params (must include 'sigma').
+        output_dir: Path to save the smoothed NPZ file.
         smooth_trans: Whether to smooth translation parameters (default: False).
     """
-    # SMPLX joint name to index mapping (55 joints, pose is 165D)
-    joint_map = {
-        "Pelvis": 0,
-        "L_Hip": 1,
-        "R_Hip": 2,
-        "Spine1": 3,
-        "L_Knee": 4,
-        "R_Knee": 5,
-        "Spine2": 6,
-        "L_Ankle": 7,
-        "R_Ankle": 8,
-        "Spine3": 9,
-        "L_Foot": 10,
-        "R_Foot": 11,
-        "Neck": 12,
-        "L_Collar": 13,
-        "R_Collar": 14,
-        "Head": 15,
-        "L_Shoulder": 16,
-        "R_Shoulder": 17,
-        "L_Elbow": 18,
-        "R_Elbow": 19,
-        "L_Wrist": 20,
-        "R_Wrist": 21,
-        "L_Hand": 22,
-        "R_Hand": 23,
-        "Jaw": 24,
-        # Left hand fingers (25-39)
-        "L_Index1": 25,
-        "L_Index2": 26,
-        "L_Index3": 27,
-        "L_Middle1": 28,
-        "L_Middle2": 29,
-        "L_Middle3": 30,
-        "L_Pinky1": 31,
-        "L_Pinky2": 32,
-        "L_Pinky3": 33,
-        "L_Ring1": 34,
-        "L_Ring2": 35,
-        "L_Ring3": 36,
-        "L_Thumb1": 37,
-        "L_Thumb2": 38,
-        "L_Thumb3": 39,
-        # Right hand fingers (40-54)
-        "R_Index1": 40,
-        "R_Index2": 41,
-        "R_Index3": 42,
-        "R_Middle1": 43,
-        "R_Middle2": 44,
-        "R_Middle3": 45,
-        "R_Pinky1": 46,
-        "R_Pinky2": 47,
-        "R_Pinky3": 48,
-        "R_Ring1": 49,
-        "R_Ring2": 50,
-        "R_Ring3": 51,
-        "R_Thumb1": 52,
-        "R_Thumb2": 53,
-        "R_Thumb3": 54,
-    }
+    # SMPLX joint names list (55 joints, pose is 165D)
+    SMPLX_JOINT_NAMES = [
+        "pelvis",
+        "left_hip",
+        "right_hip",
+        "spine1",
+        "left_knee",
+        "right_knee",
+        "spine2",
+        "left_ankle",
+        "right_ankle",
+        "spine3",
+        "left_foot",
+        "right_foot",
+        "neck",
+        "left_collar",
+        "right_collar",
+        "head",
+        "left_shoulder",
+        "right_shoulder",
+        "left_elbow",
+        "right_elbow",
+        "left_wrist",
+        "right_wrist",
+        "jaw",
+        "left_eye",
+        "right_eye",
+        "left_index1",
+        "left_index2",
+        "left_index3",
+        "left_middle1",
+        "left_middle2",
+        "left_middle3",
+        "left_pinky1",
+        "left_pinky2",
+        "left_pinky3",
+        "left_ring1",
+        "left_ring2",
+        "left_ring3",
+        "left_thumb1",
+        "left_thumb2",
+        "left_thumb3",
+        "right_index1",
+        "right_index2",
+        "right_index3",
+        "right_middle1",
+        "right_middle2",
+        "right_middle3",
+        "right_pinky1",
+        "right_pinky2",
+        "right_pinky3",
+        "right_ring1",
+        "right_ring2",
+        "right_ring3",
+        "right_thumb1",
+        "right_thumb2",
+        "right_thumb3",
+    ]
+
+    output_npz_path = output_dir / f"{input_npz_path.stem}_smoothed.npz"
 
     data = np.load(input_npz_path.expanduser())
     poses = data["poses"].copy()  # Shape: [num_frames, 165] (55 joints * 3)
@@ -271,11 +271,12 @@ def dampen_smpl_parameters(
     print(f"Analyzing {poses.shape[0]} frames")
 
     for joint_name, params in joint_params.items():
-        if joint_name not in joint_map:
+        try:
+            joint_idx = SMPLX_JOINT_NAMES.index(joint_name)
+        except ValueError:
             msg.warn(f"Joint '{joint_name}' not found in SMPLX, skipping")
             continue
 
-        joint_idx = joint_map[joint_name]
         sigma = params.get("sigma", 3.0)
         print(f"Smoothing {joint_name} (joint {joint_idx}) with sigma={sigma}")
 
@@ -294,18 +295,46 @@ def dampen_smpl_parameters(
         smoothed_trans = np.stack([gaussian_filter1d(trans[:, i], sigma=3.0) for i in range(3)], axis=-1)
         trans = smoothed_trans
 
-    # Save smoothed data (include expression if present)
-    save_dict = {"poses": poses, "betas": betas, "trans": trans}
-    if "expression" in data:
-        save_dict["expression"] = data["expression"]  # SMPLX has expression params
+    # Save smoothed data (copy all keys from source and update modified ones)
+    save_dict = dict(data)  # Copy all keys from the original NPZ
+    save_dict["poses"] = poses
+    save_dict["betas"] = betas
+    save_dict["trans"] = trans
     np.savez(output_npz_path, **save_dict)
     msg.good(f"Saved smoothed SMPLX parameters to: {output_npz_path}")
+
+
+def dampener_smpl(input_path: Path, config_path: Path, output_path: Path, n_jobs: int = -1):
+    """
+    Dampen the motion of multiple joints in SMPLX NPZ files using Gaussian smoothing.
+    Args:
+        input_path: Path to the input NPZ file or folder with NPZ files.
+        config_path: Path to the YAML configuration file.
+        output_path: Path to save the output NPZ files.
+        n_jobs: Number of parallel jobs to run. Default is -1, which uses all available cores.
+    """
+    cfg = yaml.load(config_path.read_text(), Loader=yaml.Loader)
+    msg.info(f"Loaded config from {config_path}")
+    msg.divider("Config")
+    print(cfg)
+    msg.info("Creating output directory")
+    output_path.mkdir(parents=True, exist_ok=True)
+    if input_path.is_dir():
+        files = input_path.rglob("*.npz")
+    else:
+        files = [input_path]
+
+    with Parallel(n_jobs=n_jobs) as pll_exec:
+        _ = pll_exec(
+            delayed(dampen_smpl_parameters)(file_path, cfg["joint_params"], output_path) for file_path in files
+        )
 
 
 if __name__ == "__main__":
     subcommand_cli_from_dict(
         dict(
             dampen=dampener,
+            dampen_smpl=dampener_smpl,
             extract=extract_world_pos,
             split=split_bvh_by_duration,
         )
