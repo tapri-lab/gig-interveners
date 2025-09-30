@@ -186,6 +186,122 @@ def dampener(input_path: Path, config_path: Path, output_path: Path, n_jobs: int
         )
 
 
+def dampen_smpl_parameters(
+    input_npz_path: Path,
+    output_npz_path: Path,
+    joint_params: Dict,
+    smooth_trans: bool = False,
+):
+    """
+    Dampen SMPLX pose parameters for specified joints using Gaussian smoothing, similar to BVH dampening.
+
+    Args:
+        input_npz_path: Path to input NPZ file with SMPLX parameters.
+        output_npz_path: Path to save the smoothed NPZ file.
+        joint_params: Dictionary with joint names (e.g., 'RightHand') and their params (must include 'sigma').
+        smooth_trans: Whether to smooth translation parameters (default: False).
+    """
+    # SMPLX joint name to index mapping (55 joints, pose is 165D)
+    joint_map = {
+        "Pelvis": 0,
+        "L_Hip": 1,
+        "R_Hip": 2,
+        "Spine1": 3,
+        "L_Knee": 4,
+        "R_Knee": 5,
+        "Spine2": 6,
+        "L_Ankle": 7,
+        "R_Ankle": 8,
+        "Spine3": 9,
+        "L_Foot": 10,
+        "R_Foot": 11,
+        "Neck": 12,
+        "L_Collar": 13,
+        "R_Collar": 14,
+        "Head": 15,
+        "L_Shoulder": 16,
+        "R_Shoulder": 17,
+        "L_Elbow": 18,
+        "R_Elbow": 19,
+        "L_Wrist": 20,
+        "R_Wrist": 21,
+        "L_Hand": 22,
+        "R_Hand": 23,
+        "Jaw": 24,
+        # Left hand fingers (25-39)
+        "L_Index1": 25,
+        "L_Index2": 26,
+        "L_Index3": 27,
+        "L_Middle1": 28,
+        "L_Middle2": 29,
+        "L_Middle3": 30,
+        "L_Pinky1": 31,
+        "L_Pinky2": 32,
+        "L_Pinky3": 33,
+        "L_Ring1": 34,
+        "L_Ring2": 35,
+        "L_Ring3": 36,
+        "L_Thumb1": 37,
+        "L_Thumb2": 38,
+        "L_Thumb3": 39,
+        # Right hand fingers (40-54)
+        "R_Index1": 40,
+        "R_Index2": 41,
+        "R_Index3": 42,
+        "R_Middle1": 43,
+        "R_Middle2": 44,
+        "R_Middle3": 45,
+        "R_Pinky1": 46,
+        "R_Pinky2": 47,
+        "R_Pinky3": 48,
+        "R_Ring1": 49,
+        "R_Ring2": 50,
+        "R_Ring3": 51,
+        "R_Thumb1": 52,
+        "R_Thumb2": 53,
+        "R_Thumb3": 54,
+    }
+
+    data = np.load(input_npz_path.expanduser())
+    poses = data["poses"].copy()  # Shape: [num_frames, 165] (55 joints * 3)
+    betas = data["betas"].copy()  # Shape: [10] or [300] for SMPLX expression/shape
+    trans = data["trans"].copy()
+
+    msg.info(f"Processing SMPLX file: {input_npz_path}")
+    print(f"Analyzing {poses.shape[0]} frames")
+
+    for joint_name, params in joint_params.items():
+        if joint_name not in joint_map:
+            msg.warn(f"Joint '{joint_name}' not found in SMPLX, skipping")
+            continue
+
+        joint_idx = joint_map[joint_name]
+        sigma = params.get("sigma", 3.0)
+        print(f"Smoothing {joint_name} (joint {joint_idx}) with sigma={sigma}")
+
+        # Extract 3D axis-angle for this joint
+        start_idx = joint_idx * 3
+        axis_angles = poses[:, start_idx : start_idx + 3]
+
+        # Apply Gaussian smoothing to each dimension
+        smoothed = np.stack([gaussian_filter1d(axis_angles[:, i], sigma=sigma) for i in range(3)], axis=-1)
+
+        # Replace in poses
+        poses[:, start_idx : start_idx + 3] = smoothed
+
+    if smooth_trans:
+        print("Smoothing translations (global sigma=3.0)")
+        smoothed_trans = np.stack([gaussian_filter1d(trans[:, i], sigma=3.0) for i in range(3)], axis=-1)
+        trans = smoothed_trans
+
+    # Save smoothed data (include expression if present)
+    save_dict = {"poses": poses, "betas": betas, "trans": trans}
+    if "expression" in data:
+        save_dict["expression"] = data["expression"]  # SMPLX has expression params
+    np.savez(output_npz_path, **save_dict)
+    msg.good(f"Saved smoothed SMPLX parameters to: {output_npz_path}")
+
+
 if __name__ == "__main__":
     subcommand_cli_from_dict(
         dict(

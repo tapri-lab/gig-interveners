@@ -14,9 +14,9 @@ __pycache__/
 .pixi
 *.egg-info
 
+smplx
 results*/
 export/
 samples/
-smplx/
 .idea
 imgui.ini
