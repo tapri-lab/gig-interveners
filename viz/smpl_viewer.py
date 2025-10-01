@@ -246,39 +246,6 @@ def render_smpl_sequences(
     elif global_scene:
         for body, smpl_seq in smpl_seqs.items():
             v.scene.add(smpl_seq)
-            v.scene.fps = 30
-            v.playback_fps = 30
-            cam_positions, cam_targets = camera_positions_from_smpl(smpl_seq, sigma=sigma)
-            cam = PinholeCamera(
-                position=cam_positions[500],
-                target=cam_targets[500],
-                cols=1280,
-                rows=720,
-                fov=60.0,
-            )
-            v.scene.add(cam)
-            v.set_temp_camera(cam)
-            if skeleton:
-                bvh_seqs[body].color = (229 / 255, 91 / 255, 19 / 255, 1.0)
-                v.scene.add(bvh_seqs[body])
-                v.scene.get_node_by_name(smpl_seq.name).enabled = False
-            v.save_video(
-                video_dir=os.path.join(
-                    here(),
-                    "export",
-                    "headless",
-                    "individual",
-                    f"{'skeleton' if skeleton else 'smplx'}",
-                    body,
-                    f"{body}.mp4",
-                ),
-                output_fps=30,
-                animation_range=frame_range,
-            )
-            v.reset()
-    elif global_scene:
-        for body, smpl_seq in smpl_seqs.items():
-            v.scene.add(smpl_seq)
             smpl_seq.color = (22 / 255, 125 / 255, 127 / 255, 1.0)
             v.scene.fps = 30
             v.playback_fps = 30
