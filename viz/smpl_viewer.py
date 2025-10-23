@@ -162,6 +162,7 @@ def render_smpl_sequences(
 
     if not global_scene and not global_unified:
         for body, smpl_seq in smpl_seqs.items():
+            smpl_seq.color = (229 / 255, 91 / 255, 19 / 255, 1.0)
             v.scene.add(smpl_seq)
             v.scene.fps = 30
             v.playback_fps = 30
