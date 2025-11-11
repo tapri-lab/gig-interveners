@@ -33,11 +33,12 @@ def collect_bvh_seqs(bvh_path: Path) -> Dict[str, SMPLSequence]:
             if filename.endswith(".bvh"):
                 input_path = root / filename
                 bvh_seqs[root.stem] = Skeletons.from_bvh(input_path)
+
     return bvh_seqs
 
 
 def collect_smpl_sequences(
-    smpl_path: Path, frame_limit: int = 1000
+    smpl_path: Path, frame_limit: Tuple[int, int] = (0, 1000)
 ) -> Tuple[Dict[str, SMPLSequence], List[np.ndarray]]:
     """
     Collect SMPL sequences from the specified path.
@@ -46,6 +47,7 @@ def collect_smpl_sequences(
     :return: Dictionary of SMPLSequence objects keyed by their directory names.
     """
     smplx_layer = SMPLLayer(model_type="smplx", gender="neutral", device=C.device)
+    frame_start, frame_end = frame_limit
 
     # To load a SMPL layer (without X), use this poses_body_end and change the model_type above to "smpl"
     # Remember that SMPL does not have hands, so those need to be removed from the SMPLSequence below
@@ -66,15 +68,14 @@ def collect_smpl_sequences(
                 input_path = root / filename
 
                 data = np.load(input_path)
-
                 smpl_seqs[root.stem] = SMPLSequence(
                     smpl_layer=smplx_layer,
-                    poses_body=data["poses"][:frame_limit, 3:poses_body_end],
-                    poses_root=data["poses_root"][:frame_limit, :3],
-                    betas=data["betas"][:frame_limit],
-                    trans=data["trans"][:frame_limit],
-                    poses_left_hand=data["poses"][:frame_limit, poses_left_hand_start:poses_left_hand_end],
-                    poses_right_hand=data["poses"][:frame_limit, poses_right_hand_start:],
+                    poses_body=data["poses"][frame_start:frame_end, 3:poses_body_end],
+                    poses_root=data["poses_root"][frame_start:frame_end, :3],
+                    betas=data["betas"],
+                    trans=data["trans"][frame_start:frame_end],
+                    poses_left_hand=data["poses"][frame_start:frame_end, poses_left_hand_start:poses_left_hand_end],
+                    poses_right_hand=data["poses"][frame_start:frame_end, poses_right_hand_start:],
                     color=(22 / 255, 125 / 255, 127 / 255, 1.0),
                 )
                 root_trans.append(smpl_seqs[root.stem].trans[300].cpu().numpy())
@@ -137,7 +138,7 @@ def camera_positions_from_smpl(smpl_seq: SMPLSequence, sigma: float = 10.0) -> (
 
 def render_smpl_sequences(
     smpl_path: Path,
-    bvh_path: Path,
+    bvh_path: Path | None = None,
     sigma: float = 10.0,
     global_scene: bool = False,
     global_unified: bool = False,
@@ -155,10 +156,17 @@ def render_smpl_sequences(
     :param frame_range: Range of frames to render in the video.
     :return:
     """
-    smpl_seqs, root_trans = collect_smpl_sequences(smpl_path, frame_limit=frame_range[1])
+    smpl_seqs, root_trans = collect_smpl_sequences(smpl_path, frame_limit=(frame_range[0], frame_range[1]))
     v = HeadlessRenderer()
     v.scene.origin.enabled = False
-    bvh_seqs = collect_bvh_seqs(bvh_path=bvh_path)
+
+    # Only load BVH sequences if skeleton rendering is enabled
+    if skeleton:
+        if bvh_path is None:
+            raise ValueError("bvh_path must be provided when skeleton=True")
+        bvh_seqs = collect_bvh_seqs(bvh_path=bvh_path)
+    else:
+        bvh_seqs = {}
 
     if not global_scene and not global_unified:
         for body, smpl_seq in smpl_seqs.items():
@@ -242,7 +250,7 @@ def render_smpl_sequences(
                     f"cam_{idx}_all.mp4",
                 ),
                 output_fps=30,
-                animation_range=frame_range,
+                animation_range=frame_range if skeleton else None,
             )
     elif global_scene:
         for body, smpl_seq in smpl_seqs.items():
@@ -256,8 +264,8 @@ def render_smpl_sequences(
                 v.scene.get_node_by_name(smpl_seq.name).enabled = False
                 smpl_seqs[body] = bvh_seqs[body]
         center = np.mean(root_trans, axis=0)
-        center[1] += 0.5  # Raise the camera a bit
-        r = 5
+        center[1] += 0.1  # Raise the camera a bit
+        r = 3.5
         d = 8
         gcam_pos = [
             path.circle(center=center, radius=r, num=int(314 * 2 * r / d), start_angle=360, end_angle=i * 90)[-1]
@@ -265,7 +273,7 @@ def render_smpl_sequences(
         ]
         global_cams = [
             PinholeCamera(
-                pos + np.array([0, 0.5, 0]),  # Raise the camera a bit,
+                pos,  # Raise the camera a bit,
                 center,
                 v.window_size[0],
                 v.window_size[1],
@@ -291,14 +299,14 @@ def render_smpl_sequences(
                     f"cam_{idx}_{body}.mp4",
                 ),
                 output_fps=30,
-                animation_range=frame_range,
+                animation_range=frame_range if skeleton else None,
             )
             smpl_seq.color = (22 / 255, 125 / 255, 127 / 255, 1.0)
 
 
 def view_in_aitviewer(
     smpl_path: Path,
-    bvh_path: Path,
+    bvh_path: Path | None = None,
     frame_limit: int = 1000,
     sigma: float = 10.0,
     skeleton: bool = False,
@@ -316,7 +324,13 @@ def view_in_aitviewer(
     smpl_seqs, root_trans = collect_smpl_sequences(smpl_path, frame_limit=frame_limit)
     v = Viewer()
 
-    bvh_seqs = collect_bvh_seqs(bvh_path=bvh_path)
+    # Only load BVH sequences if skeleton rendering is enabled
+    if skeleton:
+        if bvh_path is None:
+            raise ValueError("bvh_path must be provided when skeleton=True")
+        bvh_seqs = collect_bvh_seqs(bvh_path=bvh_path)
+    else:
+        bvh_seqs = {}
 
     for body, smpl_seq in smpl_seqs.items():
         if not skeleton:
@@ -395,9 +409,225 @@ def add_body25_skeleton(
     return skeleton
 
 
+def merge_video_chunks(chunk_paths: List[Path], output_path: Path) -> None:
+    """
+    Merge multiple video chunks into a single video using ffmpeg.
+    :param chunk_paths: List of paths to video chunks in order.
+    :param output_path: Path to the output merged video.
+    """
+    import subprocess
+    import tempfile
+
+    # Create a temporary file listing all chunks
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+        for chunk_path in chunk_paths:
+            f.write(f"file '{chunk_path.absolute()}'\n")
+        concat_file = Path(f.name)
+
+    try:
+        # Use ffmpeg to concatenate videos
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-f",
+                "concat",
+                "-safe",
+                "0",
+                "-i",
+                str(concat_file),
+                "-c",
+                "copy",
+                str(output_path),
+                "-y",  # Overwrite output file if it exists
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        print(f"Merged {len(chunk_paths)} chunks into {output_path}")
+    except subprocess.CalledProcessError as e:
+        print(f"FFmpeg error: {e.stderr}")
+        raise
+    finally:
+        # Clean up temporary concat file
+        # concat_file.unlink()
+        pass
+
+
+def render_smpl_sequences_chunked(
+    smpl_path: Path,
+    bvh_path: Path | None = None,
+    sigma: float = 10.0,
+    global_scene: bool = False,
+    global_unified: bool = False,
+    skeleton: bool = False,
+    frame_range: List[int] = [0, 5000],
+    chunk_size: int = 1000,
+    keep_chunks: bool = False,
+):
+    """
+    Render SMPL sequences in chunks to manage CUDA memory, then merge the results.
+    This function loads SMPL sequences in chunks to avoid CUDA OOM errors when creating SMPLSequence objects.
+
+    :param smpl_path: Path to the directory containing SMPL sequences in .npz format.
+    :param bvh_path: Path to the directory containing BVH files for skeletons (required if skeleton=True).
+    :param sigma: Smoothing factor for camera positions and targets.
+    :param global_scene: If True, renders the full scene with all SMPL sequences in one video per camera-person pair.
+    :param global_unified: If True, renders the full scene with all SMPL sequences in one video per camera (all persons together).
+    :param skeleton: If True, renders skeletons from BVH files alongside SMPL sequences.
+    :param frame_range: Range of frames to render [start, end].
+    :param chunk_size: Number of frames per chunk (default 1000).
+    :param keep_chunks: If True, keeps individual chunk files after merging.
+    """
+    import gc
+
+    v = HeadlessRenderer()
+    start_frame, end_frame = frame_range
+    total_frames = end_frame - start_frame
+
+    # Calculate chunks
+    chunks = []
+    for chunk_start in range(start_frame, end_frame, chunk_size):
+        chunk_end = min(chunk_start + chunk_size, end_frame)
+        chunks.append([chunk_start, chunk_end])
+
+    print(f"Rendering {total_frames} frames in {len(chunks)} chunks of size {chunk_size}")
+
+    # Validate skeleton mode
+    if skeleton and bvh_path is None:
+        raise ValueError("bvh_path must be provided when skeleton=True")
+
+    # Determine output paths based on rendering mode
+    if not global_scene and not global_unified:
+        # Get list of bodies directly from filesystem (no CUDA memory usage)
+        body_names = []
+        for root_str, _, files in os.walk(smpl_path.expanduser()):
+            root = Path(root_str)
+            for filename in files:
+                if filename.endswith(".npz"):
+                    body_names.append(root.stem)
+                    break  # Only need one file per body
+        body_names = list(set(body_names))  # Remove duplicates
+        print(f"Found {len(body_names)} bodies: {body_names}")
+
+        # Load BVH sequences once if needed (they don't use much CUDA memory)
+        bvh_seqs = {}
+        if skeleton:
+            bvh_seqs = collect_bvh_seqs(bvh_path=bvh_path)
+
+        # Render each body separately
+        for body in body_names:
+            chunk_paths = []
+
+            for chunk_idx, chunk_range in enumerate(chunks):
+                print(f"Rendering {body} chunk {chunk_idx + 1}/{len(chunks)}: frames {chunk_range[0]}-{chunk_range[1]}")
+
+                # Load SMPL sequences for this chunk only (this is where CUDA memory is allocated)
+                smpl_seqs, _ = collect_smpl_sequences(smpl_path, frame_limit=(chunk_range[0], chunk_range[1]))
+
+                # Check if this body exists in this chunk
+                if body not in smpl_seqs:
+                    print(f"Warning: {body} not found in chunk {chunk_idx}, skipping")
+                    continue
+
+                smpl_seq = smpl_seqs[body]
+
+                # Set up renderer
+                v.scene.origin.enabled = False
+
+                # Add SMPL sequence or skeleton
+                if skeleton:
+                    bvh_seqs[body].color = (229 / 255, 91 / 255, 19 / 255, 1.0)
+                    v.scene.add(bvh_seqs[body])
+                    # Note: we still need smpl_seq for camera calculation
+                else:
+                    smpl_seq.color = (229 / 255, 91 / 255, 19 / 255, 1.0)
+                    v.scene.add(smpl_seq)
+
+                v.scene.fps = 30
+                v.playback_fps = 30
+
+                # Calculate camera from SMPL sequence
+                cam_positions, cam_targets = camera_positions_from_smpl(smpl_seq, sigma=sigma)
+
+                # Use middle frame for camera position
+                cam_frame_idx = len(cam_positions) // 2
+                cam = PinholeCamera(
+                    position=cam_positions[cam_frame_idx],
+                    target=cam_targets[cam_frame_idx],
+                    cols=1280,
+                    rows=720,
+                    fov=60.0,
+                )
+                v.scene.add(cam)
+                v.set_temp_camera(cam)
+
+                # Set up chunk output path
+                chunk_output = Path(
+                    here(),
+                    "export",
+                    "headless",
+                    "individual",
+                    f"{'skeleton' if skeleton else 'smplx'}",
+                    body,
+                    f"{body}_chunk_{chunk_idx:04d}.mp4",
+                )
+                chunk_output.parent.mkdir(parents=True, exist_ok=True)
+
+                # Render and save
+                v.save_video(
+                    video_dir=str(chunk_output),
+                    output_fps=30,
+                    animation_range=[0, chunk_range[1] - chunk_range[0]],  # Relative to chunk
+                    ensure_no_overwrite=False,
+                )
+
+                chunk_paths.append(chunk_output)
+
+                # Clean up CUDA memory after each chunk
+                if not skeleton:
+                    v.scene.remove(smpl_seq)
+                del smpl_seqs
+                del smpl_seq
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                gc.collect()
+
+                print(f"  Completed chunk {chunk_idx + 1}/{len(chunks)}, freed CUDA memory")
+
+            # Merge chunks for this body
+            if chunk_paths:
+                final_output = Path(
+                    here(),
+                    "export",
+                    "headless",
+                    "individual",
+                    f"{'skeleton' if skeleton else 'smplx'}",
+                    body,
+                    f"{body}.mp4",
+                )
+                merge_video_chunks(chunk_paths, final_output)
+
+                # Clean up chunks if requested
+                if not keep_chunks:
+                    for chunk_path in chunk_paths:
+                        chunk_path.unlink()
+
+    else:
+        # Global rendering modes - more complex due to multiple outputs
+        raise NotImplementedError(
+            "Chunked rendering for global_scene and global_unified modes is not yet implemented. "
+            "Please use individual mode (global_scene=False, global_unified=False) for chunked rendering."
+        )
+
+
 def main():
     tyro.extras.subcommand_cli_from_dict(
-        {"view": view_in_aitviewer, "render": render_smpl_sequences},
+        {
+            "view": view_in_aitviewer,
+            "render": render_smpl_sequences,
+            "render_chunked": render_smpl_sequences_chunked,
+        },
     )
 
 
