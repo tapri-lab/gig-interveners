@@ -78,7 +78,10 @@ def collect_smpl_sequences(
                     poses_right_hand=data["poses"][frame_start:frame_end, poses_right_hand_start:],
                     color=(22 / 255, 125 / 255, 127 / 255, 1.0),
                 )
-                root_trans.append(smpl_seqs[root.stem].trans[300].cpu().numpy())
+                # Use middle frame or frame 300 if available, otherwise use last frame
+                num_frames = smpl_seqs[root.stem].trans.shape[0]
+                frame_idx = min(300, num_frames - 1) if num_frames > 0 else 0
+                root_trans.append(smpl_seqs[root.stem].trans[frame_idx].cpu().numpy())
     return smpl_seqs, root_trans
 
 
@@ -156,7 +159,10 @@ def render_smpl_sequences(
     :param frame_range: Range of frames to render in the video.
     :return:
     """
-    smpl_seqs, root_trans = collect_smpl_sequences(smpl_path, frame_limit=(frame_range[0], frame_range[1]))
+    if not skeleton:
+        smpl_seqs, root_trans = collect_smpl_sequences(smpl_path, frame_limit=(frame_range[0], frame_range[1]))
+    else:
+        smpl_seqs, root_trans = collect_smpl_sequences(smpl_path, frame_limit=(0, 600))
     v = HeadlessRenderer()
     v.scene.origin.enabled = False
 
@@ -172,8 +178,8 @@ def render_smpl_sequences(
         for body, smpl_seq in smpl_seqs.items():
             smpl_seq.color = (229 / 255, 91 / 255, 19 / 255, 1.0)
             v.scene.add(smpl_seq)
-            v.scene.fps = 30
-            v.playback_fps = 30
+            v.scene.fps = 25
+            v.playback_fps = 25
             cam_positions, cam_targets = camera_positions_from_smpl(smpl_seq, sigma=sigma)
             cam = PinholeCamera(
                 position=cam_positions[500],
@@ -198,7 +204,7 @@ def render_smpl_sequences(
                     body,
                     f"{body}.mp4",
                 ),
-                output_fps=30,
+                output_fps=25,
                 animation_range=frame_range,
             )
             v.reset()
@@ -207,8 +213,8 @@ def render_smpl_sequences(
         for body, smpl_seq in smpl_seqs.items():
             v.scene.add(smpl_seq)
             smpl_seq.color = (22 / 255, 125 / 255, 127 / 255, 1.0)
-            v.scene.fps = 30
-            v.playback_fps = 30
+            v.scene.fps = 25
+            v.playback_fps = 25
             if skeleton:
                 bvh_seqs[body].color = (22 / 255, 125 / 255, 127 / 255, 1.0)
                 v.scene.add(bvh_seqs[body])
@@ -216,8 +222,8 @@ def render_smpl_sequences(
 
         # Set up cameras
         center = np.mean(root_trans, axis=0)
-        center[1] += 0.5  # Raise the camera a bit
-        r = 5
+        center[1] += 0.1  # Raise the camera a bit
+        r = 3.5
         d = 8
         gcam_pos = [
             path.circle(center=center, radius=r, num=int(314 * 2 * r / d), start_angle=360, end_angle=i * 90)[-1]
@@ -225,7 +231,7 @@ def render_smpl_sequences(
         ]
         global_cams = [
             PinholeCamera(
-                pos + np.array([0, 0.5, 0]),  # Raise the camera a bit,
+                pos,
                 center,
                 v.window_size[0],
                 v.window_size[1],
@@ -249,15 +255,15 @@ def render_smpl_sequences(
                     f"cam_{idx}",
                     f"cam_{idx}_all.mp4",
                 ),
-                output_fps=30,
+                output_fps=25,
                 animation_range=frame_range if skeleton else None,
             )
     elif global_scene:
         for body, smpl_seq in smpl_seqs.items():
             v.scene.add(smpl_seq)
             smpl_seq.color = (22 / 255, 125 / 255, 127 / 255, 1.0)
-            v.scene.fps = 30
-            v.playback_fps = 30
+            v.scene.fps = 25
+            v.playback_fps = 25
             if skeleton:
                 bvh_seqs[body].color = (22 / 255, 125 / 255, 127 / 255, 1.0)
                 v.scene.add(bvh_seqs[body])
@@ -298,7 +304,7 @@ def render_smpl_sequences(
                     f"cam_{idx}",
                     f"cam_{idx}_{body}.mp4",
                 ),
-                output_fps=30,
+                output_fps=25,
                 animation_range=frame_range if skeleton else None,
             )
             smpl_seq.color = (22 / 255, 125 / 255, 127 / 255, 1.0)
@@ -339,7 +345,7 @@ def view_in_aitviewer(
             v.scene.add(bvh_seqs[body])
             # smpl_seq.mesh_seq.enabled = False
             bvh_seqs[body].color = (229 / 255, 91 / 255, 19 / 255, 1.0)
-        v.playback_fps = 30
+        v.playback_fps = 25
         # v.scene.fps = 30
         cam_positions, cam_targets = camera_positions_from_smpl(smpl_seq, sigma=sigma)
 
@@ -353,10 +359,8 @@ def view_in_aitviewer(
         v.scene.add(cam)
         v.set_temp_camera(cam)
     center = np.mean(root_trans, axis=0)
-    center[0] += 0  # Move the camera back a bit
-    center[1] += 0.5  # Raise the camera a bit
-    center[2] += 0
-    r = 5
+    center[1] += 0.1  # Raise the camera a bit
+    r = 3.5
     d = 10
 
     gcam_pos = [
@@ -381,32 +385,71 @@ def view_in_aitviewer(
     v.run()
 
 
-def add_body25_skeleton(
-    points: np.ndarray,
-    icon="skeleton",
-    kintree=BODY_HAND_KINTREE,
-    color=(1.0, 0, 1 / 255, 1.0),
-) -> Skeletons:
-    skeleton = Skeletons(
-        joint_positions=points[:, :, :3],
-        joint_connections=kintree,
-        icon=icon,
-        color=color,
-    )
+def _add_sequences_to_scene(
+    viewer: HeadlessRenderer,
+    smpl_seqs: Dict[str, SMPLSequence],
+    bvh_seqs: Dict[str, Skeletons],
+    skeleton_mode: bool,
+    highlight_body: str | None = None,
+) -> None:
+    """
+    Add SMPL sequences and skeletons to the scene.
 
-    # Remove the lines that we don't have data for by making them transparent
-    line_colors = np.zeros((len(kintree), 4))
-    line_colors[:] = color
-    for i, connection in enumerate(kintree):
-        if points[0, connection[0], 3] == 0:
-            line_colors[i] = [1, 0, 0, 0]
+    :param viewer: The HeadlessRenderer instance
+    :param smpl_seqs: Dictionary of SMPL sequences to add
+    :param bvh_seqs: Dictionary of skeleton sequences to add if skeleton_mode=True
+    :param skeleton_mode: If True, add skeletons and disable SMPL meshes
+    :param highlight_body: Optional body name to highlight in orange, others in teal
+    """
+    for body, smpl_seq in smpl_seqs.items():
+        # Set color based on whether this body is highlighted
+        if highlight_body is None or highlight_body == body:
+            color = (229 / 255, 91 / 255, 19 / 255, 1.0)  # Orange for highlighted
+        else:
+            color = (22 / 255, 125 / 255, 127 / 255, 1.0)  # Teal for background
 
-        if points[0, connection[1], 3] == 0:
-            line_colors[i] = [1, 0, 0, 0]
+        smpl_seq.color = color
+        viewer.scene.add(smpl_seq)
 
-    skeleton.lines.line_colors = line_colors
-    skeleton.spheres.color = (50 / 255, 50 / 255, 1 / 255, 1.0)
-    return skeleton
+        # In skeleton mode, add skeleton and disable the SMPL mesh
+        if skeleton_mode and body in bvh_seqs:
+            bvh_seqs[body].color = color
+            viewer.scene.add(bvh_seqs[body])
+            viewer.scene.get_node_by_name(smpl_seq.name).enabled = False
+
+
+def _cleanup_chunk_scene(
+    viewer: HeadlessRenderer,
+    smpl_seqs: Dict[str, SMPLSequence],
+    bvh_seqs: Dict[str, Skeletons],
+    cam: PinholeCamera,
+    skeleton_mode: bool,
+) -> None:
+    """
+    Clean up SMPL sequences, skeletons, and camera from the scene after rendering a chunk.
+
+    :param viewer: The HeadlessRenderer instance
+    :param smpl_seqs: Dictionary of SMPL sequences to remove
+    :param bvh_seqs: Dictionary of skeleton sequences to remove
+    :param cam: Camera to remove
+    :param skeleton_mode: If True, also remove skeletons from scene
+    """
+    import gc
+
+    for smpl_seq in smpl_seqs.values():
+        viewer.scene.remove(smpl_seq)
+
+    # Remove skeletons to prevent memory leak
+    # if skeleton_mode:
+    #     for body in smpl_seqs.keys():
+    #         if body in bvh_seqs:
+    #             viewer.scene.remove(bvh_seqs[body])
+
+    viewer.scene.remove(cam)
+
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    gc.collect()
 
 
 def merge_video_chunks(chunk_paths: List[Path], output_path: Path) -> None:
@@ -510,9 +553,10 @@ def render_smpl_sequences_chunked(
         body_names = list(set(body_names))  # Remove duplicates
         print(f"Found {len(body_names)} bodies: {body_names}")
 
-        # Load BVH sequences once if needed (they don't use much CUDA memory)
+        # Load BVH sequences once if in skeleton mode (they don't use CUDA memory)
         bvh_seqs = {}
         if skeleton:
+            assert bvh_path is not None  # Already validated above
             bvh_seqs = collect_bvh_seqs(bvh_path=bvh_path)
 
         # Render each body separately
@@ -534,18 +578,11 @@ def render_smpl_sequences_chunked(
 
                 # Set up renderer
                 v.scene.origin.enabled = False
+                v.scene.fps = 25
+                v.playback_fps = 25
 
-                # Add SMPL sequence or skeleton
-                if skeleton:
-                    bvh_seqs[body].color = (229 / 255, 91 / 255, 19 / 255, 1.0)
-                    v.scene.add(bvh_seqs[body])
-                    # Note: we still need smpl_seq for camera calculation
-                else:
-                    smpl_seq.color = (229 / 255, 91 / 255, 19 / 255, 1.0)
-                    v.scene.add(smpl_seq)
-
-                v.scene.fps = 30
-                v.playback_fps = 30
+                # Add SMPL sequences to scene (with skeleton overlay if needed)
+                _add_sequences_to_scene(v, {body: smpl_seq}, bvh_seqs, skeleton_mode=skeleton, highlight_body=body)
 
                 # Calculate camera from SMPL sequence
                 cam_positions, cam_targets = camera_positions_from_smpl(smpl_seq, sigma=sigma)
@@ -577,24 +614,20 @@ def render_smpl_sequences_chunked(
                 # Render and save
                 v.save_video(
                     video_dir=str(chunk_output),
-                    output_fps=30,
-                    animation_range=[0, chunk_range[1] - chunk_range[0]],  # Relative to chunk
+                    output_fps=25,
+                    animation_range=[chunk_range[0], chunk_range[1]],  # Absolute frame range for skeleton
                     ensure_no_overwrite=False,
                 )
 
                 chunk_paths.append(chunk_output)
 
                 # Clean up CUDA memory after each chunk
-                if not skeleton:
-                    v.scene.remove(smpl_seq)
+                _cleanup_chunk_scene(v, smpl_seqs, bvh_seqs, cam, skeleton_mode=skeleton)
                 del smpl_seqs
                 del smpl_seq
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-                gc.collect()
+                del cam
 
                 print(f"  Completed chunk {chunk_idx + 1}/{len(chunks)}, freed CUDA memory")
-
             # Merge chunks for this body
             if chunk_paths:
                 final_output = Path(
@@ -613,12 +646,246 @@ def render_smpl_sequences_chunked(
                     for chunk_path in chunk_paths:
                         chunk_path.unlink()
 
+    elif global_unified:
+        # Global unified: all bodies in one video per camera
+        # Get body names from filesystem
+        body_names = []
+        for root_str, _, files in os.walk(smpl_path.expanduser()):
+            root = Path(root_str)
+            for filename in files:
+                if filename.endswith(".npz"):
+                    body_names.append(root.stem)
+                    break
+        body_names = list(set(body_names))
+        print(f"Found {len(body_names)} bodies: {body_names}")
+
+        # Load BVH sequences once if in skeleton mode (they don't use CUDA memory)
+        bvh_seqs = {}
+        if skeleton:
+            assert bvh_path is not None  # Already validated above
+            bvh_seqs = collect_bvh_seqs(bvh_path=bvh_path)
+
+        # We need root_trans for camera setup - load first chunk to get it
+        temp_seqs, temp_root_trans = collect_smpl_sequences(smpl_path, frame_limit=(start_frame, start_frame + 1))
+        center = np.mean(temp_root_trans, axis=0)
+        center[1] += 0.1  # Raise the camera a bit
+        del temp_seqs
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        gc.collect()
+
+        # Set up cameras (4 cameras around the scene)
+        r = 3.5
+        d = 8
+        gcam_pos = [
+            path.circle(center=center, radius=r, num=int(314 * 2 * r / d), start_angle=360, end_angle=i * 90)[-1]
+            for i in range(1, 5)
+        ]
+
+        # Render each camera separately
+        for cam_idx in range(len(gcam_pos)):
+            chunk_paths = []
+
+            for chunk_idx, chunk_range in enumerate(chunks):
+                print(
+                    f"Rendering camera {cam_idx} chunk {chunk_idx + 1}/{len(chunks)}: frames {chunk_range[0]}-{chunk_range[1]}"
+                )
+
+                # Load SMPL sequences for this chunk
+                smpl_seqs, _ = collect_smpl_sequences(smpl_path, frame_limit=(chunk_range[0], chunk_range[1]))
+
+                v.scene.origin.enabled = False
+                v.scene.fps = 25
+                v.playback_fps = 25
+
+                # Add all SMPL sequences to scene (no highlighting in unified mode)
+                _add_sequences_to_scene(v, smpl_seqs, bvh_seqs, skeleton_mode=skeleton, highlight_body=None)
+
+                # Create camera for this angle
+                pos = gcam_pos[cam_idx]
+                cam = PinholeCamera(
+                    pos + np.array([0, 0.5, 0]),
+                    center,
+                    v.window_size[0],
+                    v.window_size[1],
+                    viewer=v,
+                    fov=60,
+                )
+                v.scene.add(cam)
+                v.set_temp_camera(cam)
+
+                # Set up chunk output path
+                chunk_output = Path(
+                    here(),
+                    "export",
+                    "headless",
+                    "global_unified",
+                    "smplx" if not skeleton else "skeleton",
+                    f"cam_{cam_idx}",
+                    f"cam_{cam_idx}_all_chunk_{chunk_idx:04d}.mp4",
+                )
+                chunk_output.parent.mkdir(parents=True, exist_ok=True)
+
+                # Render and save
+                v.save_video(
+                    video_dir=str(chunk_output),
+                    output_fps=25,
+                    animation_range=[chunk_range[0], chunk_range[1]],  # Absolute frame range for skeletons
+                    ensure_no_overwrite=False,
+                )
+
+                chunk_paths.append(chunk_output)
+
+                # Clean up CUDA memory after each chunk
+                _cleanup_chunk_scene(v, smpl_seqs, bvh_seqs, cam, skeleton_mode=skeleton)
+                del smpl_seqs
+                del cam
+
+                print(f"  Completed chunk {chunk_idx + 1}/{len(chunks)}, freed CUDA memory")
+
+            # Merge chunks for this camera
+            if chunk_paths:
+                final_output = Path(
+                    here(),
+                    "export",
+                    "headless",
+                    "global_unified",
+                    "smplx" if not skeleton else "skeleton",
+                    f"cam_{cam_idx}",
+                    f"cam_{cam_idx}_all.mp4",
+                )
+                merge_video_chunks(chunk_paths, final_output)
+
+                # Clean up chunks if requested
+                if not keep_chunks:
+                    for chunk_path in chunk_paths:
+                        chunk_path.unlink()
+
+    elif global_scene:
+        # Global scene: all bodies visible, but each body highlighted in separate video per camera
+        # Get body names from filesystem
+        body_names = []
+        for root_str, _, files in os.walk(smpl_path.expanduser()):
+            root = Path(root_str)
+            for filename in files:
+                if filename.endswith(".npz"):
+                    body_names.append(root.stem)
+                    break
+        body_names = list(set(body_names))
+        print(f"Found {len(body_names)} bodies: {body_names}")
+
+        # Load BVH sequences once if in skeleton mode (they don't use CUDA memory)
+        bvh_seqs = {}
+        if skeleton:
+            assert bvh_path is not None  # Already validated above
+            bvh_seqs = collect_bvh_seqs(bvh_path=bvh_path)
+
+        # We need root_trans for camera setup - load first chunk to get it
+        temp_seqs, temp_root_trans = collect_smpl_sequences(smpl_path, frame_limit=(start_frame, start_frame + 1))
+        center = np.mean(temp_root_trans, axis=0)
+        center[1] += 0.1  # Raise the camera a bit
+        del temp_seqs
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        gc.collect()
+
+        # Set up cameras (4 cameras around the scene)
+        r = 3.5
+        d = 8
+        gcam_pos = [
+            path.circle(center=center, radius=r, num=int(314 * 2 * r / d), start_angle=360, end_angle=i * 90)[-1]
+            for i in range(1, 5)
+        ]
+
+        # Render each camera-body combination
+        for cam_idx in range(len(gcam_pos)):
+            for body in body_names:
+                chunk_paths = []
+
+                for chunk_idx, chunk_range in enumerate(chunks):
+                    print(
+                        f"Rendering camera {cam_idx} body {body} chunk {chunk_idx + 1}/{len(chunks)}: frames {chunk_range[0]}-{chunk_range[1]}"
+                    )
+
+                    # Load SMPL sequences for this chunk
+                    smpl_seqs, _ = collect_smpl_sequences(smpl_path, frame_limit=(chunk_range[0], chunk_range[1]))
+
+                    # Check if this body exists in this chunk
+                    if body not in smpl_seqs:
+                        print(f"Warning: {body} not found in chunk {chunk_idx}, skipping")
+                        continue
+
+                    v.scene.origin.enabled = False
+                    v.scene.fps = 25
+                    v.playback_fps = 25
+
+                    # Add all SMPL sequences with the target body highlighted
+                    _add_sequences_to_scene(v, smpl_seqs, bvh_seqs, skeleton_mode=skeleton, highlight_body=body)
+
+                    # Create camera for this angle
+                    pos = gcam_pos[cam_idx]
+                    cam = PinholeCamera(
+                        pos,
+                        center,
+                        v.window_size[0],
+                        v.window_size[1],
+                        viewer=v,
+                        fov=60,
+                    )
+                    v.scene.add(cam)
+                    v.set_temp_camera(cam)
+
+                    # Set up chunk output path
+                    chunk_output = Path(
+                        here(),
+                        "export",
+                        "headless",
+                        "global",
+                        "smplx" if not skeleton else "skeleton",
+                        body,
+                        f"cam_{cam_idx}",
+                        f"cam_{cam_idx}_{body}_chunk_{chunk_idx:04d}.mp4",
+                    )
+                    chunk_output.parent.mkdir(parents=True, exist_ok=True)
+
+                    # Render and save
+                    v.save_video(
+                        video_dir=str(chunk_output),
+                        output_fps=25,
+                        animation_range=[chunk_range[0], chunk_range[1]],  # Absolute frame range for skeletons
+                        ensure_no_overwrite=False,
+                    )
+
+                    chunk_paths.append(chunk_output)
+
+                    # Clean up CUDA memory after each chunk
+                    _cleanup_chunk_scene(v, smpl_seqs, bvh_seqs, cam, skeleton_mode=skeleton)
+                    del smpl_seqs
+                    del cam
+
+                    print(f"  Completed chunk {chunk_idx + 1}/{len(chunks)}, freed CUDA memory")
+
+                # Merge chunks for this camera-body combination
+                if chunk_paths:
+                    final_output = Path(
+                        here(),
+                        "export",
+                        "headless",
+                        "global",
+                        "smplx" if not skeleton else "skeleton",
+                        body,
+                        f"cam_{cam_idx}",
+                        f"cam_{cam_idx}_{body}.mp4",
+                    )
+                    merge_video_chunks(chunk_paths, final_output)
+
+                    # Clean up chunks if requested
+                    if not keep_chunks:
+                        for chunk_path in chunk_paths:
+                            chunk_path.unlink()
+
     else:
-        # Global rendering modes - more complex due to multiple outputs
-        raise NotImplementedError(
-            "Chunked rendering for global_scene and global_unified modes is not yet implemented. "
-            "Please use individual mode (global_scene=False, global_unified=False) for chunked rendering."
-        )
+        raise ValueError("At least one of global_scene, global_unified, or individual mode must be selected")
 
 
 def main():
