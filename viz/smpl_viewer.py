@@ -403,9 +403,9 @@ def _add_sequences_to_scene(
     """
     for body, smpl_seq in smpl_seqs.items():
         # Set color based on whether this body is highlighted
-        if highlight_body is None or highlight_body == body:
+        if highlight_body == body:
             color = (229 / 255, 91 / 255, 19 / 255, 1.0)  # Orange for highlighted
-        else:
+        elif highlight_body is None:
             color = (22 / 255, 125 / 255, 127 / 255, 1.0)  # Teal for background
 
         smpl_seq.color = color
@@ -499,11 +499,9 @@ def merge_video_chunks(chunk_paths: List[Path], output_path: Path) -> None:
 
 def render_smpl_sequences_chunked(
     smpl_path: Path,
-    bvh_path: Path | None = None,
     sigma: float = 10.0,
     global_scene: bool = False,
     global_unified: bool = False,
-    skeleton: bool = False,
     frame_range: List[int] = [0, 5000],
     chunk_size: int = 1000,
     keep_chunks: bool = False,
@@ -513,11 +511,9 @@ def render_smpl_sequences_chunked(
     This function loads SMPL sequences in chunks to avoid CUDA OOM errors when creating SMPLSequence objects.
 
     :param smpl_path: Path to the directory containing SMPL sequences in .npz format.
-    :param bvh_path: Path to the directory containing BVH files for skeletons (required if skeleton=True).
     :param sigma: Smoothing factor for camera positions and targets.
     :param global_scene: If True, renders the full scene with all SMPL sequences in one video per camera-person pair.
     :param global_unified: If True, renders the full scene with all SMPL sequences in one video per camera (all persons together).
-    :param skeleton: If True, renders skeletons from BVH files alongside SMPL sequences.
     :param frame_range: Range of frames to render [start, end].
     :param chunk_size: Number of frames per chunk (default 1000).
     :param keep_chunks: If True, keeps individual chunk files after merging.
@@ -536,10 +532,6 @@ def render_smpl_sequences_chunked(
 
     print(f"Rendering {total_frames} frames in {len(chunks)} chunks of size {chunk_size}")
 
-    # Validate skeleton mode
-    if skeleton and bvh_path is None:
-        raise ValueError("bvh_path must be provided when skeleton=True")
-
     # Determine output paths based on rendering mode
     if not global_scene and not global_unified:
         # Get list of bodies directly from filesystem (no CUDA memory usage)
@@ -552,12 +544,6 @@ def render_smpl_sequences_chunked(
                     break  # Only need one file per body
         body_names = list(set(body_names))  # Remove duplicates
         print(f"Found {len(body_names)} bodies: {body_names}")
-
-        # Load BVH sequences once if in skeleton mode (they don't use CUDA memory)
-        bvh_seqs = {}
-        if skeleton:
-            assert bvh_path is not None  # Already validated above
-            bvh_seqs = collect_bvh_seqs(bvh_path=bvh_path)
 
         # Render each body separately
         for body in body_names:
@@ -581,8 +567,9 @@ def render_smpl_sequences_chunked(
                 v.scene.fps = 25
                 v.playback_fps = 25
 
-                # Add SMPL sequences to scene (with skeleton overlay if needed)
-                _add_sequences_to_scene(v, {body: smpl_seq}, bvh_seqs, skeleton_mode=skeleton, highlight_body=body)
+                # Add SMPL sequence to scene
+                smpl_seq.color = (229 / 255, 91 / 255, 19 / 255, 1.0)
+                v.scene.add(smpl_seq)
 
                 # Calculate camera from SMPL sequence
                 cam_positions, cam_targets = camera_positions_from_smpl(smpl_seq, sigma=sigma)
@@ -605,27 +592,32 @@ def render_smpl_sequences_chunked(
                     "export",
                     "headless",
                     "individual",
-                    f"{'skeleton' if skeleton else 'smplx'}",
+                    "smplx",
                     body,
                     f"{body}_chunk_{chunk_idx:04d}.mp4",
                 )
                 chunk_output.parent.mkdir(parents=True, exist_ok=True)
 
-                # Render and save
+                # Render and save (use relative frame indices for the chunk)
+                chunk_frames = chunk_range[1] - chunk_range[0]
                 v.save_video(
                     video_dir=str(chunk_output),
                     output_fps=25,
-                    animation_range=[chunk_range[0], chunk_range[1]],  # Absolute frame range for skeleton
+                    animation_range=[0, chunk_frames],
                     ensure_no_overwrite=False,
                 )
 
                 chunk_paths.append(chunk_output)
 
                 # Clean up CUDA memory after each chunk
-                _cleanup_chunk_scene(v, smpl_seqs, bvh_seqs, cam, skeleton_mode=skeleton)
+                v.scene.remove(smpl_seq)
+                v.scene.remove(cam)
                 del smpl_seqs
                 del smpl_seq
                 del cam
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                gc.collect()
 
                 print(f"  Completed chunk {chunk_idx + 1}/{len(chunks)}, freed CUDA memory")
             # Merge chunks for this body
@@ -635,7 +627,7 @@ def render_smpl_sequences_chunked(
                     "export",
                     "headless",
                     "individual",
-                    f"{'skeleton' if skeleton else 'smplx'}",
+                    "smplx",
                     body,
                     f"{body}.mp4",
                 )
@@ -658,12 +650,6 @@ def render_smpl_sequences_chunked(
                     break
         body_names = list(set(body_names))
         print(f"Found {len(body_names)} bodies: {body_names}")
-
-        # Load BVH sequences once if in skeleton mode (they don't use CUDA memory)
-        bvh_seqs = {}
-        if skeleton:
-            assert bvh_path is not None  # Already validated above
-            bvh_seqs = collect_bvh_seqs(bvh_path=bvh_path)
 
         # We need root_trans for camera setup - load first chunk to get it
         temp_seqs, temp_root_trans = collect_smpl_sequences(smpl_path, frame_limit=(start_frame, start_frame + 1))
@@ -698,8 +684,10 @@ def render_smpl_sequences_chunked(
                 v.scene.fps = 25
                 v.playback_fps = 25
 
-                # Add all SMPL sequences to scene (no highlighting in unified mode)
-                _add_sequences_to_scene(v, smpl_seqs, bvh_seqs, skeleton_mode=skeleton, highlight_body=None)
+                # Add all SMPL sequences to scene (all in teal/background color)
+                for body, smpl_seq in smpl_seqs.items():
+                    smpl_seq.color = (22 / 255, 125 / 255, 127 / 255, 1.0)
+                    v.scene.add(smpl_seq)
 
                 # Create camera for this angle
                 pos = gcam_pos[cam_idx]
@@ -720,26 +708,32 @@ def render_smpl_sequences_chunked(
                     "export",
                     "headless",
                     "global_unified",
-                    "smplx" if not skeleton else "skeleton",
+                    "smplx",
                     f"cam_{cam_idx}",
                     f"cam_{cam_idx}_all_chunk_{chunk_idx:04d}.mp4",
                 )
                 chunk_output.parent.mkdir(parents=True, exist_ok=True)
 
-                # Render and save
+                # Render and save (use relative frame indices for the chunk)
+                chunk_frames = chunk_range[1] - chunk_range[0]
                 v.save_video(
                     video_dir=str(chunk_output),
                     output_fps=25,
-                    animation_range=[chunk_range[0], chunk_range[1]],  # Absolute frame range for skeletons
+                    animation_range=[0, chunk_frames],
                     ensure_no_overwrite=False,
                 )
 
                 chunk_paths.append(chunk_output)
 
                 # Clean up CUDA memory after each chunk
-                _cleanup_chunk_scene(v, smpl_seqs, bvh_seqs, cam, skeleton_mode=skeleton)
+                for smpl_seq in smpl_seqs.values():
+                    v.scene.remove(smpl_seq)
+                v.scene.remove(cam)
                 del smpl_seqs
                 del cam
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                gc.collect()
 
                 print(f"  Completed chunk {chunk_idx + 1}/{len(chunks)}, freed CUDA memory")
 
@@ -750,7 +744,7 @@ def render_smpl_sequences_chunked(
                     "export",
                     "headless",
                     "global_unified",
-                    "smplx" if not skeleton else "skeleton",
+                    "smplx",
                     f"cam_{cam_idx}",
                     f"cam_{cam_idx}_all.mp4",
                 )
@@ -773,12 +767,6 @@ def render_smpl_sequences_chunked(
                     break
         body_names = list(set(body_names))
         print(f"Found {len(body_names)} bodies: {body_names}")
-
-        # Load BVH sequences once if in skeleton mode (they don't use CUDA memory)
-        bvh_seqs = {}
-        if skeleton:
-            assert bvh_path is not None  # Already validated above
-            bvh_seqs = collect_bvh_seqs(bvh_path=bvh_path)
 
         # We need root_trans for camera setup - load first chunk to get it
         temp_seqs, temp_root_trans = collect_smpl_sequences(smpl_path, frame_limit=(start_frame, start_frame + 1))
@@ -820,7 +808,12 @@ def render_smpl_sequences_chunked(
                     v.playback_fps = 25
 
                     # Add all SMPL sequences with the target body highlighted
-                    _add_sequences_to_scene(v, smpl_seqs, bvh_seqs, skeleton_mode=skeleton, highlight_body=body)
+                    for body_name, smpl_seq in smpl_seqs.items():
+                        if body_name == body:
+                            smpl_seq.color = (229 / 255, 91 / 255, 19 / 255, 1.0)  # Orange for highlighted
+                        else:
+                            smpl_seq.color = (22 / 255, 125 / 255, 127 / 255, 1.0)  # Teal for others
+                        v.scene.add(smpl_seq)
 
                     # Create camera for this angle
                     pos = gcam_pos[cam_idx]
@@ -841,27 +834,33 @@ def render_smpl_sequences_chunked(
                         "export",
                         "headless",
                         "global",
-                        "smplx" if not skeleton else "skeleton",
+                        "smplx",
                         body,
                         f"cam_{cam_idx}",
                         f"cam_{cam_idx}_{body}_chunk_{chunk_idx:04d}.mp4",
                     )
                     chunk_output.parent.mkdir(parents=True, exist_ok=True)
 
-                    # Render and save
+                    # Render and save (use relative frame indices for the chunk)
+                    chunk_frames = chunk_range[1] - chunk_range[0]
                     v.save_video(
                         video_dir=str(chunk_output),
                         output_fps=25,
-                        animation_range=[chunk_range[0], chunk_range[1]],  # Absolute frame range for skeletons
+                        animation_range=[0, chunk_frames],
                         ensure_no_overwrite=False,
                     )
 
                     chunk_paths.append(chunk_output)
 
                     # Clean up CUDA memory after each chunk
-                    _cleanup_chunk_scene(v, smpl_seqs, bvh_seqs, cam, skeleton_mode=skeleton)
+                    for smpl_seq in smpl_seqs.values():
+                        v.scene.remove(smpl_seq)
+                    v.scene.remove(cam)
                     del smpl_seqs
                     del cam
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                    gc.collect()
 
                     print(f"  Completed chunk {chunk_idx + 1}/{len(chunks)}, freed CUDA memory")
 
@@ -872,7 +871,7 @@ def render_smpl_sequences_chunked(
                         "export",
                         "headless",
                         "global",
-                        "smplx" if not skeleton else "skeleton",
+                        "smplx",
                         body,
                         f"cam_{cam_idx}",
                         f"cam_{cam_idx}_{body}.mp4",

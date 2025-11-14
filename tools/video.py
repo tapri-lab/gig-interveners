@@ -1,8 +1,9 @@
 import os
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 import ffmpeg
+from omegaconf import OmegaConf
 from tyro.extras import subcommand_cli_from_dict
 
 
@@ -142,13 +143,27 @@ def stitch_videos(
             delay_ms = int(audio_offset * 1000)
             mixed_audio = mixed_audio.filter("adelay", f"{delay_ms}|{delay_ms}")
 
-        # Output with audio
+        # Output with audio (shortest=None ensures video duration determines output length)
+        # Use CQ mode with high quality VBR and bitrate cap
         out = ffmpeg.output(
-            final_video, mixed_audio, output_file, vcodec="hevc_nvenc", acodec="aac", audio_bitrate="192k"
+            final_video,
+            mixed_audio,
+            output_file,
+            vcodec="hevc_nvenc",
+            acodec="aac",
+            audio_bitrate="192k",
+            shortest=None,
+            **{"rc:v": "vbr_hq", "cq:v": "19", "b:v": "8M", "maxrate:v": "10M", "bufsize:v": "16M"},
         ).overwrite_output()
     else:
         # Output without audio
-        out = ffmpeg.output(final_video, output_file, vcodec="hevc_nvenc").overwrite_output()
+        # Use CQ mode with high quality VBR and bitrate cap
+        out = ffmpeg.output(
+            final_video,
+            output_file,
+            vcodec="hevc_nvenc",
+            **{"rc:v": "vbr_hq", "cq:v": "19", "b:v": "8M", "maxrate:v": "10M", "bufsize:v": "16M"},
+        ).overwrite_output()
 
     out.run()
 
@@ -191,12 +206,333 @@ def split_videos(input_path: Path, output_path: Path, chunk_length: int):
                     print(e.stderr.decode())
 
 
+def _resolve_paths(path_spec: str | Path, pattern: str = "*.mp4") -> List[Path]:
+    """
+    Resolve a path specification to a list of file paths.
+    Supports:
+    - Direct file path
+    - Directory path (finds all files matching pattern)
+    - Glob pattern (e.g., "/path/*/*.mp4")
+    """
+    path = Path(path_spec).expanduser()
+
+    # If it contains glob characters, use glob
+    if "*" in str(path) or "?" in str(path):
+        from pathlib import Path as P
+
+        # Get the base path without glob parts
+        parts = path.parts
+        base_parts = []
+        glob_pattern_parts = []
+        found_glob = False
+
+        for part in parts:
+            if "*" in part or "?" in part:
+                found_glob = True
+            if found_glob:
+                glob_pattern_parts.append(part)
+            else:
+                base_parts.append(part)
+
+        base = P(*base_parts) if base_parts else P(".")
+        glob_pattern = str(P(*glob_pattern_parts)) if glob_pattern_parts else pattern
+
+        return sorted(base.glob(glob_pattern))
+
+    # If it's a file, return it directly
+    if path.is_file():
+        return [path]
+
+    # If it's a directory, find all matching files
+    if path.is_dir():
+        return sorted(path.glob(pattern))
+
+    # Path doesn't exist
+    return []
+
+
+def process_from_config(config_path: Path, operation: Optional[str] = None):
+    """
+    Process videos based on a YAML configuration file with OmegaConf variable interpolation.
+
+    :param config_path: Path to the YAML configuration file
+    :param operation: Specific operation to run (stitch, crop, split, or batch_stitch). If None, runs 'stitch'.
+    """
+    config_path = Path(config_path).expanduser()
+
+    # Load config with OmegaConf for automatic variable interpolation
+    config = OmegaConf.load(config_path)
+
+    # Default to 'stitch' if no operation specified
+    if operation is None:
+        operation = "stitch"
+
+    if operation == "stitch":
+        stitch_cfg = config.get("stitch", {})
+        _process_stitch_config(OmegaConf.to_container(stitch_cfg, resolve=True))
+    elif operation == "crop":
+        crop_cfg = config.get("crop", {})
+        _process_crop_config(OmegaConf.to_container(crop_cfg, resolve=True))
+    elif operation == "split":
+        split_cfg = config.get("split", {})
+        _process_split_config(OmegaConf.to_container(split_cfg, resolve=True))
+    elif operation == "batch_stitch":
+        batch_cfg_list = config.get("batch_stitch", [])
+        batch_configs = OmegaConf.to_container(batch_cfg_list, resolve=True)
+        if not isinstance(batch_configs, list):
+            raise ValueError("batch_stitch must be a list in the config")
+        for idx, batch_cfg in enumerate(batch_configs):
+            if not isinstance(batch_cfg, dict):
+                raise ValueError(f"batch_stitch item {idx} must be a dict")
+            name = batch_cfg.get("name", f"batch_{idx}")
+            print(f"\n=== Processing batch job: {name} ===")
+            _process_stitch_config(batch_cfg)
+    else:
+        raise ValueError(f"Unknown operation: {operation}")
+
+
+def _process_stitch_config(config: Dict[str, Any]):
+    """Process a stitch operation from config, supporting multiple people."""
+    # Check if we're processing multiple people
+    people = config.get("people", [])
+    people_dir = config.get("people_dir")
+
+    if people:
+        # Process each person separately
+        for person_cfg in people:
+            _process_single_stitch(config, person_cfg)
+    elif people_dir:
+        # Auto-discover people from directory structure
+        people_dir_path = Path(people_dir).expanduser()
+        individual_pattern = config.get("individual_video_pattern", "*/*.mp4")
+        individual_videos = _resolve_paths(people_dir_path, individual_pattern)
+
+        for video_path in individual_videos:
+            # Extract person name from directory structure
+            # Handle nested paths like individual/smplx/crop/person_a/video.mp4
+            person_name = video_path.parent.name
+            person_cfg = {"name": person_name, "individual_video_path": str(video_path)}
+            _process_single_stitch(config, person_cfg)
+    elif "{person}" in config.get("global_video_path", "") or "{person}" in config.get("individual_video_path", ""):
+        # Auto-discover people from template paths
+        people_list = _discover_people_from_templates(config)
+        if not people_list:
+            raise ValueError(
+                "Template path contains {person} placeholder but no people were discovered. "
+                "Use 'people_dir' or 'people' list to specify people."
+            )
+        for person_cfg in people_list:
+            _process_single_stitch(config, person_cfg)
+    else:
+        # Single stitch operation (no people list)
+        _process_single_stitch(config, None)
+
+
+def _discover_people_from_templates(config: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Auto-discover people from template paths containing {person} placeholder.
+    E.g., global/smplx/{person}/*/video.mp4 -> finds all person directories
+    """
+    people = []
+    discovered_names = set()
+
+    # Try to discover from global_video_path
+    global_template = config.get("global_video_path", "")
+    if "{person}" in global_template:
+        # Extract the parent path before {person}
+        template_path = Path(global_template)
+        parts = template_path.parts
+        person_idx = next((i for i, part in enumerate(parts) if "{person}" in part), None)
+
+        if person_idx is not None:
+            base_path = Path(*parts[:person_idx]) if person_idx > 0 else Path(".")
+            base_path = base_path.expanduser()
+
+            if base_path.exists() and base_path.is_dir():
+                # List subdirectories at the person level
+                for person_dir in base_path.iterdir():
+                    if person_dir.is_dir():
+                        person_name = person_dir.name
+                        discovered_names.add(person_name)
+
+    # Try to discover from individual_video_path
+    individual_template = config.get("individual_video_path", "")
+    if "{person}" in individual_template:
+        template_path = Path(individual_template)
+        parts = template_path.parts
+        person_idx = next((i for i, part in enumerate(parts) if "{person}" in part), None)
+
+        if person_idx is not None:
+            base_path = Path(*parts[:person_idx]) if person_idx > 0 else Path(".")
+            base_path = base_path.expanduser()
+
+            if base_path.exists() and base_path.is_dir():
+                for person_dir in base_path.iterdir():
+                    if person_dir.is_dir():
+                        person_name = person_dir.name
+                        discovered_names.add(person_name)
+
+    # Create person configs
+    for person_name in sorted(discovered_names):
+        people.append({"name": person_name})
+
+    return people
+
+
+def _process_single_stitch(config: Dict[str, Any], person_cfg: Optional[Dict[str, Any]]):
+    """Process a single stitch operation for one person or no person."""
+    # Resolve global video paths - support per-person paths
+    person_name = person_cfg.get("name") if person_cfg else None
+
+    # Check for person-specific global video path first
+    if person_cfg and "global_video_path" in person_cfg:
+        global_path = person_cfg["global_video_path"]
+        global_pattern = person_cfg.get("global_video_pattern", "*.mp4")
+    else:
+        global_path = config.get("global_video_path")
+        global_pattern = config.get("global_video_pattern", "*.mp4")
+
+        # Replace {person} placeholder if present
+        if person_name and global_path:
+            global_path = global_path.replace("{person}", person_name)
+
+    if not global_path:
+        raise ValueError("global_video_path is required for stitch operation")
+
+    global_videos = _resolve_paths(global_path, global_pattern)
+    if len(global_videos) != 4:
+        raise ValueError(
+            f"Expected 4 global videos for {person_name or 'base'}, found {len(global_videos)}: {global_videos}"
+        )
+
+    # Resolve individual video (optional)
+    individual_video = None
+    # Try person-specific path first, then fall back to main config
+    individual_path = None
+    individual_pattern = "*.mp4"
+
+    if person_cfg and "individual_video_path" in person_cfg:
+        # Get individual video from person config
+        individual_path = person_cfg.get("individual_video_path")
+        individual_pattern = person_cfg.get("individual_video_pattern", "*.mp4")
+    elif config.get("individual_video_path"):
+        # Get individual video from main config
+        individual_path = config.get("individual_video_path")
+        individual_pattern = config.get("individual_video_pattern", "*.mp4")
+
+    if individual_path:
+        # Replace {person} placeholder if present
+        if person_name and "{person}" in individual_path:
+            individual_path = individual_path.replace("{person}", person_name)
+
+        individual_videos = _resolve_paths(individual_path, individual_pattern)
+        if len(individual_videos) == 1:
+            individual_video = individual_videos[0]
+        elif len(individual_videos) == 0:
+            print(f"Warning: No individual video found matching pattern: {individual_path}")
+        elif len(individual_videos) > 1:
+            raise ValueError(f"Expected 1 individual video, found {len(individual_videos)}: {individual_videos}")
+
+    # Resolve audio paths (optional)
+    audio_files = []
+    # Check person-specific audio first
+    if person_cfg and "audio_paths" in person_cfg:
+        audio_paths_cfg = person_cfg["audio_paths"]
+    else:
+        audio_paths_cfg = config.get("audio_paths", [])
+
+    if isinstance(audio_paths_cfg, list):
+        for audio_spec in audio_paths_cfg:
+            resolved = _resolve_paths(audio_spec, "*.wav")
+            audio_files.extend(resolved)
+    elif audio_paths_cfg:
+        # Single path/pattern
+        audio_files = _resolve_paths(audio_paths_cfg, "*.wav")
+
+    # Alternative: audio_dir + audio_pattern
+    if not audio_files and "audio_dir" in config:
+        audio_dir = config["audio_dir"]
+        audio_pattern = config.get("audio_pattern", "*.wav")
+        audio_files = _resolve_paths(audio_dir, audio_pattern)
+
+    audio_offset = config.get("audio_offset", 0.0)
+
+    # Determine output path
+    output_path_str = config["output_path"]
+    if person_cfg:
+        person_name = person_cfg["name"]
+        # Replace {person} placeholder in output path
+        output_path_str = output_path_str.replace("{person}", person_name)
+        # If no placeholder, append person name as subdirectory
+        if "{person}" not in config["output_path"]:
+            output_path = Path(output_path_str).expanduser() / person_name
+        else:
+            output_path = Path(output_path_str).expanduser()
+        print(f"\n=== Processing person: {person_name} ===")
+    else:
+        output_path = Path(output_path_str).expanduser()
+
+    print(f"Global videos ({len(global_videos)}): {[str(p.name) for p in global_videos]}")
+    if individual_video:
+        print(f"Individual video: {individual_video}")
+    else:
+        print("Individual video: None (will create 2x2 grid only)")
+    if audio_files:
+        print(f"Audio files ({len(audio_files)}): {[str(p.name) for p in audio_files]}")
+    else:
+        print("Audio files: None (video will have no audio)")
+    print(f"Output: {output_path}")
+
+    # Create a temp directory with the 4 global videos for stitch_videos
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+        for video in global_videos:
+            (tmp_path / video.name).symlink_to(video.absolute())
+
+        stitch_videos(
+            global_video_path=tmp_path,
+            output_path=output_path,
+            individual_video_path=individual_video,
+            audio_paths=audio_files,
+            audio_offset=audio_offset,
+        )
+
+
+def _process_crop_config(config: Dict[str, Any]):
+    """Process a crop operation from config."""
+    input_path = Path(config["input_path"]).expanduser()
+    output_path = Path(config["output_path"]).expanduser()
+    crop_width = config.get("crop_width", 1920)
+    crop_height = config.get("crop_height", 1080)
+    preset = config.get("preset", "fast")
+
+    print(f"Cropping videos from {input_path} to {output_path}")
+    print(f"Crop size: {crop_width}x{crop_height}, preset: {preset}")
+
+    crop_center(input_path, output_path, crop_width, crop_height, preset)
+
+
+def _process_split_config(config: Dict[str, Any]):
+    """Process a split operation from config."""
+    input_path = Path(config["input_path"]).expanduser()
+    output_path = Path(config["output_path"]).expanduser()
+    chunk_length = config.get("chunk_length", 30)
+
+    print(f"Splitting videos from {input_path} to {output_path}")
+    print(f"Chunk length: {chunk_length} seconds")
+
+    split_videos(input_path, output_path, chunk_length)
+
+
 if __name__ == "__main__":
     subcommand_cli_from_dict(
         {
             "crop": crop_center,
             "stitch": stitch_videos,
             "split": split_videos,
+            "config": process_from_config,
         },
         description="Video processing tools",
     )
