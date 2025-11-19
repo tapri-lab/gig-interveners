@@ -1,0 +1,46 @@
+# Video Processing Configuration
+# This file defines paths and patterns for batch video processing operations
+
+# Base paths - use these to avoid repetition
+base_video_path: "/home/ojas/projects/gig-interveners/export_dampened/"
+base_output_path: "/home/ojas/projects/gig-interveners/export_dampened/"
+
+# Process all people automatically using {person} template placeholder
+# This auto-discovers people from the directory structure
+batch_stitch:
+  - name: "smplx_indiv_stitched_dampened_int"
+    # Template paths: {person} will be replaced with discovered person names
+    # Structure: global/smplx/{person}/{cam}/*.mp4
+    # Each person should have exactly 4 videos (one per camera angle)
+    global_video_path: "/home/ojas/projects/gig-interveners/export_dampened/headless/global/smplx/{person}/*/*.mp4"
+
+    # Structure: individual/smplx/crop/{person}/*.mp4
+    individual_video_path: "/home/ojas/projects/gig-interveners/export_dampened/headless/individual/smplx/crop/{person}/*.mp4"
+
+    audio_paths: ["/home/ojas/data/dnd/Session_1/clean_audio/*.wav"]
+    audio_offset: 7.4
+    output_path: "/home/ojas/projects/gig-interveners/export_dampened/stitch/smplx_indiv_stitched_dampened_int/{person}/"
+
+  # - name: "smplx_grp_stitched_dampened_int"
+  #   # Template paths: {person} will be replaced with discovered person names
+  #   # Structure: global/smplx/{person}/{cam}/*.mp4
+  #   # Each person should have exactly 4 videos (one per camera angle)
+  #   global_video_path: "/home/ojas/projects/gig-interveners/export_dampened/headless/global_unified/smplx/*/*.mp4"
+
+  #   audio_paths: ["/home/ojas/data/dnd/Session_1/clean_audio/*.wav"]
+  #   audio_offset: 7.4
+  #   output_path: "/home/ojas/projects/gig-interveners/export_dampened/stitch/smplx_grp_stitched_dampened_int/"
+# Alternative: Explicitly list people with their specific paths
+# batch_stitch:
+#   - name: "session_3"
+#     audio_paths: ["/path/to/audio/*.wav"]
+#     output_path: "/export_dampened/session_3/"
+#
+#     people:
+#       - name: "person_a"
+#         global_video_path: "/export_dampened/global/smplx/person_a/*/*.mp4"
+#         individual_video_path: "/export_dampened/individual/smplx/crop/person_a/*.mp4"
+#       - name: "person_b"
+#         global_video_path: "/export_dampened/global/smplx/person_b/*/*.mp4"
+#         individual_video_path: "/export_dampened/individual/smplx/crop/person_b/*.mp4"
+#         audio_paths: ["/path/to/person_b_custom_audio.wav"]  # Optional override

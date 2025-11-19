@@ -1,0 +1,134 @@
+# Video Processing Configuration
+# This file defines paths and patterns for batch video processing operations
+
+# Base paths - use these to avoid repetition
+base_video_path: "/home/ojas/projects/gig-interveners/export/"
+base_output_path: "/home/ojas/projects/gig-interveners/export/"
+
+# Stitch configuration - combines multiple videos into a 2x2 grid
+# stitch:
+#   # Path or pattern for finding 4 global view videos
+#   # Can be a directory (finds all .mp4) or glob pattern (e.g., "*/global_*.mp4")
+#   global_video_path: "${base_video_path}/global_views/"
+#   global_video_pattern: "*.mp4" # Optional: filter files (default: "*.mp4")
+
+#   # Optional: Path to individual/vertical side video
+#   # Leave empty or comment out if not needed
+#   individual_video_path: "${base_video_path}/individual_view.mp4"
+#   individual_video_pattern: null # Optional: pattern if individual_video_path is a directory
+
+#   # Optional: Audio files to merge
+#   # Can be a list of files, a directory, or a glob pattern
+#   audio_paths:
+#     - "${base_video_path}/a/audio_segments/*.wav"
+#     - "${base_video_path}/c/audio_segments/*.wav"
+#   # Alternative: specify a directory and pattern
+#   # audio_dir: "${base_video_path}/audio/"
+#   # audio_pattern: "person_*.wav"
+
+#   audio_offset: 0.0 # Delay in seconds (optional)
+
+#   output_path: "${base_output_path}/stitched/"
+
+# # Crop configuration
+# crop:
+#   input_path: "${base_video_path}/raw_videos/"
+#   output_path: "${base_output_path}/cropped/"
+#   crop_width: 1920
+#   crop_height: 1080
+#   preset: "fast" # FFmpeg preset: "fast", "medium", "slow"
+
+# # Split configuration
+# split:
+#   input_path: "${base_video_path}/full_videos/"
+#   output_path: "${base_output_path}/chunked/"
+#   chunk_length: 30 # seconds
+
+# Multiple stitch jobs - process different sessions in batch
+# Uncomment and duplicate this section to process multiple videos at once
+
+# Process all people automatically using {person} template placeholder
+# This auto-discovers people from the directory structure
+batch_stitch:
+  - name: "skeleton_indiv_stitched_no_int"
+    # Template paths: {person} will be replaced with discovered person names
+    # Structure: global/skeleton/{person}/{cam}/*.mp4
+    # Each person should have exactly 4 videos (one per camera angle)
+    global_video_path: "/home/ojas/projects/gig-interveners/export/headless/global/skeleton/{person}/*/*.mp4"
+
+    # Structure: individual/skeleton/crop/{person}/*.mp4
+    individual_video_path: "/home/ojas/projects/gig-interveners/export/headless/individual/skeleton/crop/{person}/*.mp4"
+
+    audio_paths: ["/home/ojas/data/dnd/Session_1/clean_audio/*.wav"]
+    audio_offset: 7.4
+    output_path: "/home/ojas/projects/gig-interveners/export/stitch/skeleton_indiv_stitched_no_int/{person}/"
+
+  - name: "skeleton_grp_stitched_no_int"
+    # Template paths: {person} will be replaced with discovered person names
+    # Structure: global/skeleton/{person}/{cam}/*.mp4
+    # Each person should have exactly 4 videos (one per camera angle)
+    global_video_path: "/home/ojas/projects/gig-interveners/export/headless/global_unified/skeleton/*/*.mp4"
+
+    audio_paths: ["/home/ojas/data/dnd/Session_1/clean_audio/*.wav"]
+    audio_offset: 7.4
+    output_path: "/home/ojas/projects/gig-interveners/export/stitch/skeleton_grp_stitched_no_int/"
+
+  - name: "skeleton_indiv_stitched_delay_int"
+    # Template paths: {person} will be replaced with discovered person names
+    # Structure: global/skeleton/{person}/{cam}/*.mp4
+    # Each person should have exactly 4 videos (one per camera angle)
+    global_video_path: "/home/ojas/projects/gig-interveners/export/headless/global/skeleton/{person}/*/*.mp4"
+
+    # Structure: individual/skeleton/crop/{person}/*.mp4
+    individual_video_path: "/home/ojas/projects/gig-interveners/export/headless/individual/skeleton/crop/{person}/*.mp4"
+
+    audio_paths: ["/home/ojas/data/dnd/Session_1/clean_audio/*.wav"]
+    audio_offset: 8.8
+    output_path: "/home/ojas/projects/gig-interveners/export/stitch/skeleton_indiv_stitched_int/{person}/"
+
+  - name: "skeleton_grp_stitched_delay_int"
+    # Template paths: {person} will be replaced with discovered person names
+    # Structure: global/skeleton/{person}/{cam}/*.mp4
+    # Each person should have exactly 4 videos (one per camera angle)
+    global_video_path: "/home/ojas/projects/gig-interveners/export/headless/global_unified/skeleton/*/*.mp4"
+
+    audio_paths: ["/home/ojas/data/dnd/Session_1/clean_audio/*.wav"]
+    audio_offset: 8.8
+    output_path: "/home/ojas/projects/gig-interveners/export/stitch/skeleton_grp_stitched_int/"
+
+  - name: "skeleton_indiv_stitched_pitch_int"
+    # Template paths: {person} will be replaced with discovered person names
+    # Structure: global/skeleton/{person}/{cam}/*.mp4
+    # Each person should have exactly 4 videos (one per camera angle)
+    global_video_path: "/home/ojas/projects/gig-interveners/export/headless/global/skeleton/{person}/*/*.mp4"
+
+    # Structure: individual/skeleton/crop/{person}/*.mp4
+    individual_video_path: "/home/ojas/projects/gig-interveners/export/headless/individual/skeleton/crop/{person}/*.mp4"
+
+    audio_paths: ["/home/ojas/data/dnd/Session_1/limited_audio_120/*.wav"]
+    audio_offset: 7.4
+    output_path: "/home/ojas/projects/gig-interveners/export/stitch/skeleton_indiv_stitched_pitch_int/{person}/"
+
+  - name: "skeleton_grp_stitched_pitch_int"
+    # Template paths: {person} will be replaced with discovered person names
+    # Structure: global/skeleton/{person}/{cam}/*.mp4
+    # Each person should have exactly 4 videos (one per camera angle)
+    global_video_path: "/home/ojas/projects/gig-interveners/export/headless/global_unified/skeleton/*/*.mp4"
+
+    audio_paths: ["/home/ojas/data/dnd/Session_1/limited_audio_120/*.wav"]
+    audio_offset: 7.4
+    output_path: "/home/ojas/projects/gig-interveners/export/stitch/skeleton_grp_stitched_pitch_int/"
+# Alternative: Explicitly list people with their specific paths
+# batch_stitch:
+#   - name: "session_3"
+#     audio_paths: ["/path/to/audio/*.wav"]
+#     output_path: "/export/session_3/"
+#
+#     people:
+#       - name: "person_a"
+#         global_video_path: "/export/global/skeleton/person_a/*/*.mp4"
+#         individual_video_path: "/export/individual/skeleton/crop/person_a/*.mp4"
+#       - name: "person_b"
+#         global_video_path: "/export/global/skeleton/person_b/*/*.mp4"
+#         individual_video_path: "/export/individual/skeleton/crop/person_b/*.mp4"
+#         audio_paths: ["/path/to/person_b_custom_audio.wav"]  # Optional override

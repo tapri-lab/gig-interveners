@@ -147,6 +147,7 @@ def render_smpl_sequences(
     global_unified: bool = False,
     skeleton: bool = False,
     frame_range: List[int] = [0, 5000],
+    dampened: bool = False,
 ):
     """
     Render SMPL sequences in headless mode using AITViewer.
@@ -157,8 +158,10 @@ def render_smpl_sequences(
     :param global_scene: If True, renders the full scene with all SMPL sequences in one video per camera-person pair.
     :param global_unified: If True, renders the full scene with all SMPL sequences in one video per camera (all persons together).
     :param frame_range: Range of frames to render in the video.
+    :param dampened: If True, outputs to 'export_dampened' folder instead of 'export'.
     :return:
     """
+    export_folder = "export_dampened" if dampened else "export"
     if not skeleton:
         smpl_seqs, root_trans = collect_smpl_sequences(smpl_path, frame_limit=(frame_range[0], frame_range[1]))
     else:
@@ -197,7 +200,7 @@ def render_smpl_sequences(
             v.save_video(
                 video_dir=os.path.join(
                     here(),
-                    "export",
+                    export_folder,
                     "headless",
                     "individual",
                     f"{'skeleton' if skeleton else 'smplx'}",
@@ -248,7 +251,7 @@ def render_smpl_sequences(
             v.save_video(
                 video_dir=os.path.join(
                     here(),
-                    "export",
+                    export_folder,
                     "headless",
                     "global_unified",
                     "smplx" if not skeleton else "skeleton",
@@ -296,7 +299,7 @@ def render_smpl_sequences(
             v.save_video(
                 video_dir=os.path.join(
                     here(),
-                    "export",
+                    export_folder,
                     "headless",
                     "global",
                     "smplx" if not skeleton else "skeleton",
@@ -505,6 +508,7 @@ def render_smpl_sequences_chunked(
     frame_range: List[int] = [0, 5000],
     chunk_size: int = 1000,
     keep_chunks: bool = False,
+    dampened: bool = False,
 ):
     """
     Render SMPL sequences in chunks to manage CUDA memory, then merge the results.
@@ -517,7 +521,9 @@ def render_smpl_sequences_chunked(
     :param frame_range: Range of frames to render [start, end].
     :param chunk_size: Number of frames per chunk (default 1000).
     :param keep_chunks: If True, keeps individual chunk files after merging.
+    :param dampened: If True, outputs to 'export_dampened' folder instead of 'export'.
     """
+    export_folder = "export_dampened" if dampened else "export"
     import gc
 
     v = HeadlessRenderer()
@@ -589,7 +595,7 @@ def render_smpl_sequences_chunked(
                 # Set up chunk output path
                 chunk_output = Path(
                     here(),
-                    "export",
+                    export_folder,
                     "headless",
                     "individual",
                     "smplx",
@@ -624,7 +630,7 @@ def render_smpl_sequences_chunked(
             if chunk_paths:
                 final_output = Path(
                     here(),
-                    "export",
+                    export_folder,
                     "headless",
                     "individual",
                     "smplx",
@@ -705,7 +711,7 @@ def render_smpl_sequences_chunked(
                 # Set up chunk output path
                 chunk_output = Path(
                     here(),
-                    "export",
+                    export_folder,
                     "headless",
                     "global_unified",
                     "smplx",
@@ -741,7 +747,7 @@ def render_smpl_sequences_chunked(
             if chunk_paths:
                 final_output = Path(
                     here(),
-                    "export",
+                    export_folder,
                     "headless",
                     "global_unified",
                     "smplx",
@@ -831,7 +837,7 @@ def render_smpl_sequences_chunked(
                     # Set up chunk output path
                     chunk_output = Path(
                         here(),
-                        "export",
+                        export_folder,
                         "headless",
                         "global",
                         "smplx",
@@ -868,7 +874,7 @@ def render_smpl_sequences_chunked(
                 if chunk_paths:
                     final_output = Path(
                         here(),
-                        "export",
+                        export_folder,
                         "headless",
                         "global",
                         "smplx",

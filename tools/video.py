@@ -144,7 +144,7 @@ def stitch_videos(
             mixed_audio = mixed_audio.filter("adelay", f"{delay_ms}|{delay_ms}")
 
         # Output with audio (shortest=None ensures video duration determines output length)
-        # Use CQ mode with high quality VBR and bitrate cap
+        # Use CQP mode for best quality (constant quantization parameter)
         out = ffmpeg.output(
             final_video,
             mixed_audio,
@@ -153,16 +153,16 @@ def stitch_videos(
             acodec="aac",
             audio_bitrate="192k",
             shortest=None,
-            **{"rc:v": "vbr_hq", "cq:v": "19", "b:v": "8M", "maxrate:v": "10M", "bufsize:v": "16M"},
+            **{"rc:v": "constqp", "qp:v": "19"},
         ).overwrite_output()
     else:
         # Output without audio
-        # Use CQ mode with high quality VBR and bitrate cap
+        # Use CQP mode for best quality (constant quantization parameter)
         out = ffmpeg.output(
             final_video,
             output_file,
             vcodec="hevc_nvenc",
-            **{"rc:v": "vbr_hq", "cq:v": "19", "b:v": "8M", "maxrate:v": "10M", "bufsize:v": "16M"},
+            **{"rc:v": "constqp", "qp:v": "19"},
         ).overwrite_output()
 
     out.run()
