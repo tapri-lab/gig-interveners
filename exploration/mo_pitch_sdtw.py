@@ -1,8 +1,6 @@
-
-
 import marimo
 
-__generated_with = "0.13.2"
+__generated_with = "0.14.12"
 app = marimo.App(width="medium", app_title="Pitch Var Results")
 
 
@@ -231,7 +229,15 @@ def _(pl, sdtw_pitch_var_res):
 
 
 @app.cell
-def _(alt, baseline_color, here, intervened_color, mo, pitch_var_agg):
+def _(
+    alt,
+    baseline_color,
+    here,
+    intervened_color,
+    mo,
+    pitch_var_agg,
+    pitch_var_res_path,
+):
     alt.theme.enable("ggplot2")
     base = alt.Chart(pitch_var_agg).encode(
         x=alt.X("person:N", axis=alt.Axis(title="Persons", labelFontSize=13, titleFontSize=20)),
@@ -262,7 +268,7 @@ def _(alt, baseline_color, here, intervened_color, mo, pitch_var_agg):
         .configure_title(fontSize=20)
         .configure_legend(titleFontSize=18, labelFontSize=15)
     )
-    chart.save(here() / "results" / "plots" / f"pitch_var_error_bar_plot.pdf")
+    chart.save(here() / "results" / "plots" / f"pitch_var_{pitch_var_res_path.path().parent.stem}_error_bar_plot.pdf")
     mo.ui.altair_chart(chart)
     return
 

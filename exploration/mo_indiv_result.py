@@ -1,9 +1,7 @@
-
-
 import marimo
 
-__generated_with = "0.13.2"
-app = marimo.App(width="medium", app_title="Individual Results")
+__generated_with = "0.14.12"
+app = marimo.App(width="columns", app_title="Individual Results")
 
 with app.setup:
     from typing import List
@@ -103,10 +101,10 @@ def _():
         initial_path=here() / "results/" / "results_base",
         filetypes=[".parquet"],
         selection_mode="file",
-        label="Select RQA Base File",
+        label="Select RQA Base File", multiple=False
     )
     intervened_ijr_path = mo.ui.file_browser(
-        initial_path=here() / "results/", filetypes=[".parquet"], selection_mode="file", label="Select RQA Intervened File"
+        initial_path=here() / "results/", filetypes=[".parquet"], selection_mode="file", label="Select RQA Intervened File", multiple=False
     )
     mo.hstack([base_ijr_path, intervened_ijr_path], align="center")
     return base_ijr_path, intervened_ijr_path
@@ -166,6 +164,7 @@ def _(
     baseline_color,
     ijr_joined_filtered,
     intervened_color,
+    intervened_ijr_path,
     rqa_metric_choice,
 ):
     alt.theme.enable("ggplot2")
@@ -211,7 +210,7 @@ def _(
         .configure_legend(titleFontSize=18, labelFontSize=15)
     )
 
-    chart_ijr.save(here() / "results" / "plots" / f"{rqa_metric_choice.value.replace('_', '')}_indiv_error_bar_plot.pdf")
+    chart_ijr.save(here() / "results" / "plots" / f"{rqa_metric_choice.value.replace('_', '')}_indiv_{intervened_ijr_path.path(0).parent.stem}_error_bar_plot.pdf")
 
     mo.ui.altair_chart(chart_ijr)
     return
@@ -320,8 +319,8 @@ def _(rqa_lmem_model):
 
 
 @app.cell
-def _(rqa_lmem_res, rqa_metric_choice):
-    with open(here() / "results" / "latex" / f"{rqa_metric_choice.value}_lmem.tex", "w") as f:
+def _(intervened_ijr_path, rqa_lmem_res, rqa_metric_choice):
+    with open(here() / "results" / "latex" / f"{rqa_metric_choice.value}_{intervened_ijr_path.path(0).parent.stem}_lmem.tex", "w") as f:
         f.write(rqa_lmem_res.summary().as_latex())
     mo.md(rqa_lmem_res.summary().as_html())
     return
@@ -411,14 +410,6 @@ def _(bfil_base, bfil_int, person_mapping, silence_df):
     return (bfil_joined,)
 
 
-@app.cell
-def _(bfil_joined):
-    bfil_joined.group_by(["condition"]).agg(
-        pl.col("Value").median(),
-    )
-    return
-
-
 @app.cell(hide_code=True)
 def _(bfil_joined):
     bfil_agg = (
@@ -429,7 +420,6 @@ def _(bfil_joined):
             pl.col("Value").std().alias("std"),
         )
     )
-    bfil_agg
     return (bfil_agg,)
 
 
@@ -480,7 +470,7 @@ def _(baseline_color, bfil_agg, intervened_bc_path, intervened_color):
         )
         .configure_legend(titleFontSize=19, labelFontSize=16)
     )
-    chart_bc.save(here() / "results" / "plots" / f"bc_{vs_title.replace(' ', '_')}_error_bar_plot.pdf")
+    chart_bc.save(here() / "results" / "plots" / f"bc_{vs_title.replace(' ', '_')}_{intervened_bc_path.path(0).parent.name}_error_bar_plot.pdf")
     mo.ui.altair_chart(chart_bc)
     return (vs_title,)
 
@@ -560,8 +550,11 @@ def _(bc_lmem_model):
 
 
 @app.cell
-def _(rb, vs_title):
-    with open(here() / f"results/latex/self_bc_{vs_title.replace(' ', '_')}_lmem.tex", "w") as fbc:
+def _(intervened_bc_path, rb, vs_title):
+    with open(
+        here() / f"results/latex/self_bc_{intervened_bc_path.path(0).parent.name}_{vs_title.replace(' ', '_')}_lmem.tex",
+        "w",
+    ) as fbc:
         fbc.write(rb.summary().as_latex())
 
     rb.summary()
@@ -571,6 +564,132 @@ def _(rb, vs_title):
 @app.cell
 def _(rb):
     print(rb.summary())
+    return
+
+
+@app.cell(hide_code=True)
+def _():
+    mo.md(r"""# Unified BC""")
+    return
+
+
+@app.cell(hide_code=True)
+def _(base_bc_path):
+    all_bc_paths = mo.ui.file_browser(
+        initial_path=here() / "results/",
+        filetypes=[".parquet"],
+        selection_mode="file",
+        label="Select BC Intervened Files",
+        multiple=True,
+    )
+    mo.hstack([base_bc_path, all_bc_paths], align="center")
+    return (all_bc_paths,)
+
+
+@app.cell(hide_code=True)
+def _():
+    bc_mode = mo.ui.dropdown(["Audio Delay", "Motion Dampened"], label="Select BC Mode", value="Audio Delay")
+    bc_mode
+    return (bc_mode,)
+
+
+@app.cell(hide_code=True)
+def _(all_bc_paths, base_bc_path, bc_mode):
+    if bc_mode.value == "Audio Delay" and "delay" not in all_bc_paths.path(index=0).parent.name:
+        raise ValueError("Please select the correct Audio Delay files.")
+
+    def process_all_for_bc():
+        tmp = []
+        for i in range(5):
+            p = all_bc_paths.path(i)
+            strength = float(p.parent.name[-1:]) * 10 if "Delay" not in bc_mode.value else float(p.parent.name[-4:])
+            tmp.append(pl.read_parquet(p).with_columns(strength=pl.lit(strength), condition=pl.lit("Intervened")))
+        all_df = (
+            pl.concat(tmp)
+            .with_columns(pl.col("Value").cast(pl.Float32), pl.col("chunk").cast(pl.Int32))
+            .filter(pl.col("Value").is_not_nan())
+        )
+        base_bc = pl.read_parquet(base_bc_path.path(index=0)).with_columns(
+            pl.col("Value").cast(pl.Float32), pl.col("chunk").cast(pl.Int32)
+        ).filter(pl.col("Value").is_not_nan())
+        all_df = pl.concat([base_bc.with_columns(strength=pl.lit(0.), condition=pl.lit("Base")), all_df])
+        all_df = all_df.filter(pl.col("Metric").is_in(["raw_vs_imf2", "raw_vs_raw", "raw_vs_imf1"]))
+        return all_df
+    return (process_all_for_bc,)
+
+
+@app.cell
+def _(person_mapping, process_all_for_bc, silence_df):
+    all_bc_df = process_all_for_bc()
+
+    all_bc_df = (
+        all_bc_df.with_columns(pl.col("person").replace(person_mapping))
+        .join(silence_df, how="left", on=["chunk", "person"])
+        .with_columns(pl.col("is_silent").fill_null(False))
+        # .filter(pl.col("chunk").is_in(chunks_in_control))
+    )
+    all_bc_df
+    return (all_bc_df,)
+
+
+@app.cell
+def _(all_bc_df):
+    all_bc_agg = (
+        all_bc_df.filter(pl.col("is_silent") == False)
+        .group_by(["condition", "strength"])
+        .agg(
+            pl.col("Value").mean().alias("mean"),
+            pl.col("Value").std().alias("std"),
+        )
+    )
+
+    all_bc_agg
+    return (all_bc_agg,)
+
+
+@app.cell
+def _(all_bc_agg, baseline_color, bc_mode, intervened_color):
+    alt.theme.enable("ggplot2")
+
+    base_all_bc = alt.Chart(all_bc_agg).encode(
+        x=alt.X("strength:N", axis=alt.Axis(title="Strength", titleFontSize=22, labelFontSize=17, labelAngle=0)),
+        y=alt.Y(
+            f"mean:Q",
+            axis=alt.Axis(title=f"Beat Consistency", titleFontSize=22, labelFontSize=17),
+        ),
+        color=alt.Color("condition:N", title="Condition").scale(range=[baseline_color, intervened_color]),
+        shape=alt.Shape("condition:N", title="Condition", legend=None),
+        strokeDash=alt.StrokeDash("condition:N", title="Condition", legend=None),
+    )
+
+    points_all_bc = base_all_bc.mark_point(filled=True, size=60)
+    lines_all_bc = base_all_bc.mark_line(point=False)
+    # For error bars, use separate chart but keep consistent encoding
+    error_bars_all_bc = (
+        alt.Chart(all_bc_agg)
+        .mark_errorbar(clip=True, ticks=True, size=25, thickness=3)
+        .encode(
+            x="strength:N",
+            y=alt.Y(f"mean:Q", title="").scale(zero=False),
+            yError=alt.YError(f"std:Q"),
+            color=alt.Color("condition:N", title="Condition"),
+        )
+    )
+
+    chart_all_bc = (
+        alt.layer(lines_all_bc, points_all_bc, error_bars_all_bc)
+        .resolve_scale(y="shared")
+        .properties(
+            width=500,
+            height=400,
+            title=alt.TitleParams(
+                text=f"Beat Consistency - Individual", subtitle=bc_mode.value, fontSize=24, subtitleFontSize=20
+            ),
+        )
+        .configure_legend(titleFontSize=19, labelFontSize=16)
+    )
+    chart_all_bc.save(here() / "results" / "plots" / f"all_bc_{bc_mode.value}_error_bar_plot.pdf")
+    mo.ui.altair_chart(chart_all_bc)
     return
 
 
@@ -623,6 +742,7 @@ def _(indiv_sdtw_df, person_mapping):
             (pl.col("Intervened") - pl.col("Base")).alias("deltas"),
         )
     )
+    indiv_sdtw_normalised
     return (indiv_sdtw_normalised,)
 
 
@@ -645,7 +765,7 @@ def _():
 
 
 @app.cell(hide_code=True)
-def _(baseline_color, indiv_sdtw_pldf, intervened_color):
+def _(baseline_color, indiv_sdtw_path, indiv_sdtw_pldf, intervened_color):
     alt.theme.enable("ggplot2")
 
     base_sdtw = alt.Chart(indiv_sdtw_pldf).encode(
@@ -683,7 +803,7 @@ def _(baseline_color, indiv_sdtw_pldf, intervened_color):
         )
         .configure_legend(titleFontSize=18, labelFontSize=15)
     )
-    chart_sdtw.save(here() / "results" / "plots" / f"sdtw_motion_damp_error_bar_plot.pdf")
+    chart_sdtw.save(here() / "results" / "plots" / f"indiv_sdtw_motion_damp_{indiv_sdtw_path.path(0).parent.stem}.pdf")
     mo.ui.altair_chart(chart_sdtw)
     return
 
@@ -697,6 +817,126 @@ def _():
 @app.cell
 def _(indiv_sdtw_normalised):
     pg.wilcoxon(indiv_sdtw_normalised["Base"], indiv_sdtw_normalised["Intervened"])
+    return
+
+
+@app.cell(hide_code=True)
+def _():
+    mo.md(r"""# Unified SDTW""")
+    return
+
+
+@app.cell
+def _():
+    all_indiv_sdtw_paths = mo.ui.file_browser(
+        initial_path=here() / "results/",
+        filetypes=[".parquet"],
+        selection_mode="file",
+        label="Select SDTW File",
+        multiple=True,
+    )
+    all_indiv_sdtw_paths
+    return (all_indiv_sdtw_paths,)
+
+
+@app.cell
+def _(all_indiv_sdtw_paths):
+    def process_all_sdtw():
+        all_sdtw_dfs = []
+        for i in range(5):
+            path = all_indiv_sdtw_paths.path(index=i)
+            indiv_sdtw_df = pl.read_parquet(path)
+            strength = float(path.parent.stem[-1:]) * 10
+            indiv_sdtw_df = indiv_sdtw_df.with_columns(
+                pl.col("chunk").cast(pl.Int32),
+                pl.col("Value").cast(pl.Float32),
+                pl.col("Metric").replace({"Distance_Intervened": "Intervened", "Distance_Non_Intervened": "Base"}),
+            ).with_columns(strength=pl.when(pl.col("Metric").eq("Base")).then(0).otherwise(strength))
+            all_sdtw_dfs.append(indiv_sdtw_df)
+        return pl.concat(all_sdtw_dfs, how="vertical")
+    return (process_all_sdtw,)
+
+
+@app.cell
+def _(process_all_sdtw):
+    all_sdtw_dfs = process_all_sdtw()
+    all_sdtw_dfs
+    return (all_sdtw_dfs,)
+
+
+@app.cell
+def _(all_sdtw_dfs):
+    all_sdtw_agg = all_sdtw_dfs.filter(pl.col("Value").is_not_nan()).group_by(["Metric", "strength"]).agg(
+        pl.col("Value").mean().alias("mean"), pl.col("Value").std().alias("std")
+    )
+    all_sdtw_agg = all_sdtw_agg.rename({"Metric": "condition"})
+    all_sdtw_agg
+    return (all_sdtw_agg,)
+
+
+@app.cell
+def _(all_sdtw_agg, baseline_color, intervened_color):
+    alt.theme.enable("ggplot2")
+
+    all_sdtw_ch = alt.Chart(all_sdtw_agg).encode(
+        x=alt.X("strength:N", axis=alt.Axis(title="Strength", titleFontSize=22, labelFontSize=20, labelAngle=0)),
+        y=alt.Y(
+            f"mean:Q",
+            axis=alt.Axis(title=f"SDTW Distance", titleFontSize=22, labelFontSize=20),
+        ),
+        color=alt.Color("condition:N", title="Condition").scale(range=[baseline_color, intervened_color]),
+        shape=alt.Shape("condition:N", title="Condition", legend=None),
+        strokeDash=alt.StrokeDash("condition:N", title="Condition", legend=None),
+    )
+
+    all_points_sdtw = all_sdtw_ch.mark_point(filled=True, size=90)
+    all_lines_sdtw = all_sdtw_ch.mark_line(point=False)
+    # For error bars, use separate chart but keep consistent encoding
+    all_error_bars_sdtw = (
+        alt.Chart(all_sdtw_agg)
+        .mark_errorbar(clip=True, ticks=True, size=25, thickness=5)
+        .encode(
+            x="strength:N",
+            y=alt.Y(f"mean:Q", title="").scale(zero=False),
+            yError=alt.YError(f"std:Q"),
+            color=alt.Color("condition:N", title="Condition"),
+        )
+    )
+
+    all_chart_sdtw = (
+        alt.layer(all_lines_sdtw, all_points_sdtw, all_error_bars_sdtw)
+        .resolve_scale(y="shared")
+        .properties(
+            width=500,
+            height=400,
+            title=alt.TitleParams(text=f"SDTW Distances", fontSize=24, subtitle="Within Individual", subtitleFontSize=20),
+        )
+        .configure_legend(titleFontSize=22, labelFontSize=20)
+    )
+    all_chart_sdtw.save(here() / "results" / "plots" / f"all_indiv_sdtw_motion_damp.pdf")
+    mo.ui.altair_chart(all_chart_sdtw)
+    return
+
+
+@app.cell
+def _(all_sdtw_dfs):
+    all_sdtw_normalised = pl.concat(
+        [
+            all_sdtw_dfs.filter(pl.col("Metric").eq("Base")).with_columns(
+                [((pl.col("Value") - pl.col("Value").mean()) / pl.col("Value").std()).alias("Value")]
+            ),
+            all_sdtw_dfs.filter(pl.col("Metric").eq("Intervened"))
+            .filter(pl.col("Value").is_not_nan())
+            .with_columns(
+                [
+                    (
+                        (pl.col("Value") - pl.col("Value").mean().over("strength")) / pl.col("Value").std().over("strength")
+                    ).alias("Value")
+                ]
+            ),
+        ]
+    )
+    all_sdtw_normalised.group_by(["Metric", "strength"]).agg(pl.col("Value").mean().alias("mean"), pl.col("Value").std().alias("std"))
     return
 
 

@@ -1,7 +1,7 @@
 import marimo
 
-__generated_with = "0.13.15"
-app = marimo.App(width="columns", app_title="Cross Results")
+__generated_with = "0.14.12"
+app = marimo.App(width="medium", app_title="Cross Results")
 
 with app.setup:
     import altair as alt
@@ -134,36 +134,12 @@ def _(crqa_base_path, crqa_int_path, person_mapping, session1_silence):
         .rename({"person_list": "person"})
         .unique(subset=["pair_chunk", "person", "Metric", "joint"], keep="first")
     )
-
-    joined_crqa
     return crqa_metrics, joined_crqa
 
 
 @app.cell(hide_code=True)
 def _():
     mo.md(r"""## Normality Tests""")
-    return
-
-
-@app.cell
-def _(crqa_metric_choice):
-    crqa_metric_choice
-    return
-
-
-@app.cell(hide_code=True)
-def _(crqa_metric_choice, joined_crqa):
-    sns.set_theme()
-    pg.qqplot(joined_crqa.filter(pl.col("Metric").eq(crqa_metric_choice.value)).unique("pair_chunk")["deltas"].to_numpy())
-    return
-
-
-@app.cell(hide_code=True)
-def _(crqa_metric_choice, joined_crqa):
-    alt.Chart(joined_crqa.filter(pl.col("Metric").eq(crqa_metric_choice.value)), width=500).mark_bar().encode(
-        x=alt.X("deltas", bin=True),
-        y="count()",
-    )
     return
 
 
@@ -199,7 +175,13 @@ def _(crqa_metric_choice, joined_crqa, person_mapping):
 
 
 @app.cell(hide_code=True)
-def _(baseline_color, crdf_agg, crqa_metric_choice, intervened_color):
+def _(
+    baseline_color,
+    crdf_agg,
+    crqa_int_path,
+    crqa_metric_choice,
+    intervened_color,
+):
     alt.theme.enable("ggplot2")
     base = alt.Chart(crdf_agg).encode(
         x=alt.X("person:N", axis=alt.Axis(title="Persons", titleFontSize=22, labelFontSize=17, labelAngle=0)),
@@ -240,7 +222,9 @@ def _(baseline_color, crdf_agg, crqa_metric_choice, intervened_color):
         )
         .configure_legend(titleFontSize=19, labelFontSize=16)
     )
-    chart_crqa.save(here() / f"results/plots/crqa_{crqa_metric_choice.value}_cross_error_bar.pdf")
+    chart_crqa.save(
+        here() / f"results/plots/crqa_{crqa_metric_choice.value}_{crqa_int_path.path(0).parent.stem}_cross_error_bar.pdf"
+    )
 
     mo.ui.altair_chart(chart_crqa)
     return
@@ -307,15 +291,17 @@ def _(crqa_lmem_df, crqa_metric_choice):
         crqa_lmem_df,
         groups=crqa_lmem_df["pair_chunk"],
         re_formula="1",
-        vc_formula={"pair": "0 + C(pair)"},
+        # vc_formula={"pair": "0 + C(pair)"},
     )
-    result = model.fit(reml=True)
+    result = model.fit(reml=1)
     return (result,)
 
 
 @app.cell(hide_code=True)
-def _(crqa_metric_choice, result):
-    with open(here() / f"results/latex/crqa_{crqa_metric_choice.value}_lmem.tex", "w") as f2:
+def _(crqa_int_path, crqa_metric_choice, result):
+    with open(
+        here() / f"results/latex/crqa_{crqa_metric_choice.value}_{crqa_int_path.path(0).parent.stem}_lmem.tex", "w"
+    ) as f2:
         f2.write(result.summary().as_latex())
     mo.md(result.summary().as_html())
     return
@@ -405,6 +391,28 @@ def df_to_pairwise_mat(df: pl.DataFrame, n: int) -> np.ndarray:
     return pairwise_mat
 
 
+@app.cell
+def _(crqa_metric_choice):
+    crqa_metric_choice
+    return
+
+
+@app.cell(hide_code=True)
+def _(crqa_metric_choice, joined_crqa):
+    sns.set_theme()
+    pg.qqplot(joined_crqa.filter(pl.col("Metric").eq(crqa_metric_choice.value)).unique("pair_chunk")["deltas"].to_numpy())
+    return
+
+
+@app.cell(hide_code=True)
+def _(crqa_metric_choice, joined_crqa):
+    alt.Chart(joined_crqa.filter(pl.col("Metric").eq(crqa_metric_choice.value)), width=500).mark_bar().encode(
+        x=alt.X("deltas", bin=True),
+        y="count()",
+    )
+    return
+
+
 @app.cell(hide_code=True)
 def _():
     mo.md(r"""# Cross BC""")
@@ -445,13 +453,19 @@ def _(cross_bc_base_path, cross_bc_int_path):
     return cross_bc_base, cross_bc_int
 
 
+@app.cell
+def _(cross_bc_int_path):
+    int_level = cross_bc_int_path.path(index=0).parent.name
+    return (int_level,)
+
+
 @app.cell(hide_code=True)
 def _():
     mo.md(r"""## Joined and Exploded Table""")
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(cross_bc_base, cross_bc_int):
     # Joining the results of the two dataframes for comparison
     bc_joined = (
@@ -523,7 +537,7 @@ def _():
 
 
 @app.cell(hide_code=True)
-def _(baseline_color, bc_agg, cross_bc_int_path, intervened_color):
+def _(baseline_color, bc_agg, cross_bc_int_path, int_level, intervened_color):
     alt.theme.enable("ggplot2")
     bc_base = alt.Chart(bc_agg).encode(
         x=alt.X("person:N", axis=alt.Axis(title="Persons", titleFontSize=22, labelFontSize=17, labelAngle=0)),
@@ -567,7 +581,7 @@ def _(baseline_color, bc_agg, cross_bc_int_path, intervened_color):
         .configure_legend(titleFontSize=18, labelFontSize=15)
     )
 
-    chart_bc.save(here() / f"results/plots/{vs_title}_cross_beat_consistency.pdf")
+    chart_bc.save(here() / f"results/plots/{vs_title}_{int_level}_cross_beat_consistency.pdf")
     mo.ui.altair_chart(chart_bc)
     return (vs_title,)
 
@@ -578,7 +592,7 @@ def _():
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(bc_silence):
     bc_wilcx = (
         bc_silence.pivot(
@@ -605,10 +619,10 @@ def _():
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(bc_silence):
     bc_lmem_df = (
-        bc_silence .filter(pl.col("is_silent").eq(False))
+        bc_silence.filter(pl.col("is_silent").eq(False))
         .group_by(["person", "condition", "pair", "pair_chunk", "chunk"])
         .agg(pl.col("Value").mean())
     )
@@ -621,22 +635,22 @@ def _(bc_lmem_df):
     bc_lmem_model = smf.mixedlm(
         f"Value ~ C(condition,Treatment(reference='Base'))",
         bc_lmem_df.to_pandas(),
-        groups=bc_lmem_df.to_pandas()["pair_chunk"],
-        re_formula="~1",
-        # vc_formula={"pair": "0 + C(pair)"},
+        groups=bc_lmem_df.to_pandas()["pair"],
+        # re_formula="~1",
+        vc_formula={"pair": "0 + C(pair_chunk)"},
     )
     return (bc_lmem_model,)
 
 
 @app.cell
 def _(bc_lmem_model):
-    res_bc = bc_lmem_model.fit(reml=0)
+    res_bc = bc_lmem_model.fit(reml=1)
     return (res_bc,)
 
 
 @app.cell
-def _(res_bc, vs_title):
-    with open(here() / f"results/latex/cross_bc_{vs_title}_lmem.tex", "w") as fbc:
+def _(int_level, res_bc, vs_title):
+    with open(here() / f"results/latex/cross_bc_{vs_title}_{int_level}_lmem.tex", "w") as fbc:
         fbc.write(res_bc.summary().as_latex())
     res_bc.summary()
     return
@@ -715,7 +729,7 @@ def _(intervened_sdtw_path):
     return (sdtw_intervened,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(person_mapping, sdtw_base, sdtw_intervened, session1_silence):
     joined_sdtw = sdtw_base.join(sdtw_intervened, how="inner", on=["person1", "person2", "chunk", "joint", "Metric"])
     joined_sdtw = joined_sdtw.with_columns(
@@ -756,7 +770,7 @@ def _(person_mapping, sdtw_base, sdtw_intervened, session1_silence):
     return (joined_sdtw,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(joined_sdtw):
     joined_sdtw_agg = (
         joined_sdtw.filter(pl.col("is_silent") == False)
@@ -764,7 +778,6 @@ def _(joined_sdtw):
         .agg(pl.col("Value").mean().alias("mean"), pl.col("Value").std().alias("std"))
         .with_columns(pl.col("person").str.to_uppercase())
     )
-    joined_sdtw_agg
     return (joined_sdtw_agg,)
 
 
@@ -775,7 +788,7 @@ def _():
 
 
 @app.cell(hide_code=True)
-def _(baseline_color, intervened_color, joined_sdtw_agg):
+def _(baseline_color, intervened_color, intervened_sdtw_path, joined_sdtw_agg):
     alt.theme.enable("ggplot2")
     sdtw_base_chart = alt.Chart(joined_sdtw_agg).encode(
         x=alt.X("person:N", axis=alt.Axis(title="Persons", titleFontSize=22, labelFontSize=17, labelAngle=0)),
@@ -814,7 +827,7 @@ def _(baseline_color, intervened_color, joined_sdtw_agg):
         )
         .configure_legend(titleFontSize=18, labelFontSize=15)
     )
-    chart_sdtw.save(here() / "results/plots/cross_sdtw.pdf")
+    chart_sdtw.save(here() / f"results/plots/cross_sdtw_{intervened_sdtw_path.path(0).parent.stem}.pdf")
     mo.ui.altair_chart(chart_sdtw)
     return
 
@@ -839,7 +852,7 @@ def _(sdtw_lmem_df):
         sdtw_lmem_df.to_pandas(),
         groups=sdtw_lmem_df.to_pandas()["pair_chunk"],
         re_formula="1",
-        # vc_formula={"pair": "0 + C(pair)"},
+        # vc_formula={"pair": "0 + C(pair)"},w
     )
     return (sdtw_lmem_model,)
 
@@ -851,16 +864,16 @@ def _(sdtw_lmem_model):
 
 
 @app.cell(hide_code=True)
-def _(lmem_sdtw_res):
-    with open(here() / "results/latex/cross_sdtw_lmem.tex", "w") as f:
+def _(intervened_sdtw_path, lmem_sdtw_res):
+    with open(here() / f"results/latex/cross_sdtw_{intervened_sdtw_path.path(index=0).parent.stem}_lmem.tex", "w") as f:
         f.write(lmem_sdtw_res.summary().as_latex())
     mo.md(lmem_sdtw_res.summary().as_html())
     return
 
 
 @app.cell
-def _(lmem_sdtw_res):
-    print(lmem_sdtw_res.summary())
+def _(lmem_sdtw_res, wprint):
+    wprint(lmem_sdtw_res.summary())
     return
 
 
@@ -904,6 +917,114 @@ def _(wilcx_csdtw):
 
 @app.cell(hide_code=True)
 def _():
+    mo.md(r"""# Combined SDTW""")
+    return
+
+
+@app.cell
+def _():
+    all_sdtw_paths = mo.ui.file_browser(
+        initial_path=here() / "results",
+        selection_mode="file",
+        label="Select the base SDTW file",
+        filetypes=[".parquet"],
+        multiple=True,
+    )
+    all_sdtw_paths
+    return (all_sdtw_paths,)
+
+
+@app.cell
+def _(all_sdtw_paths):
+    def process_all_sdtw():
+        all_sdtw_dfs = []
+        for i in range(5):
+            path = all_sdtw_paths.path(index=i)
+            _sdtw_df = pl.read_parquet(path)
+            strength = float(path.parent.stem[-1:]) * 10
+            _sdtw_df = (
+                _sdtw_df.with_columns(
+                    pl.col("chunk").cast(pl.Int32),
+                    pl.col("Value").cast(pl.Float32),
+                    pl.col("Metric").replace({"Distance_Intervened": "Intervened", "Distance_Non_Intervened": "Base"}),
+                )
+                .rename({"Metric": "condition"})
+                .with_columns(strength=pl.when(pl.col("condition").eq("Base")).then(0).otherwise(strength))
+            )
+            all_sdtw_dfs.append(_sdtw_df)
+        return pl.concat(all_sdtw_dfs, how="vertical")
+    return (process_all_sdtw,)
+
+
+@app.cell
+def _(process_all_sdtw, sdtw_base):
+    all_sdtw_dfs = process_all_sdtw()
+    all_sdtw_dfs = pl.concat([sdtw_base.rename({"Metric": "condition"}).with_columns(strength=pl.lit(0.0)), all_sdtw_dfs])
+    all_sdtw_dfs = all_sdtw_dfs.filter(pl.col("Value").is_not_nan())
+    all_sdtw_dfs
+    return (all_sdtw_dfs,)
+
+
+@app.cell
+def _(all_sdtw_dfs):
+    all_sdtw_agg = (
+        all_sdtw_dfs.filter(pl.col("Value").is_not_nan())
+        .group_by(["condition", "strength"])
+        .agg(pl.col("Value").mean().alias("mean"), pl.col("Value").std().alias("std"))
+    )
+    all_sdtw_agg = all_sdtw_agg.with_columns(
+        condition=pl.when(pl.col("strength") == 0).then(pl.lit("Base")).otherwise(pl.lit("Intervened"))
+    )
+    all_sdtw_agg
+    return (all_sdtw_agg,)
+
+
+@app.cell
+def _(all_sdtw_agg, baseline_color, intervened_color):
+    alt.theme.enable("ggplot2")
+
+    all_sdtw_ch = alt.Chart(all_sdtw_agg).encode(
+        x=alt.X("strength:N", axis=alt.Axis(title="Strength", titleFontSize=27, labelFontSize=25, labelAngle=0)),
+        y=alt.Y(
+            f"mean:Q",
+            axis=alt.Axis(title=f"SDTW Distance", titleFontSize=27, labelFontSize=25),
+        ),
+        color=alt.Color("condition:N", title="Condition").scale(range=[baseline_color, intervened_color]),
+        shape=alt.Shape("condition:N", title="Condition", legend=None),
+        strokeDash=alt.StrokeDash("condition:N", title="Condition", legend=None),
+    )
+
+    all_points_sdtw = all_sdtw_ch.mark_point(filled=True, size=90)
+    all_lines_sdtw = all_sdtw_ch.mark_line(point=False)
+    # For error bars, use separate chart but keep consistent encoding
+    all_error_bars_sdtw = (
+        alt.Chart(all_sdtw_agg)
+        .mark_errorbar(clip=True, ticks=True, size=30, thickness=5)
+        .encode(
+            x="strength:N",
+            y=alt.Y(f"mean:Q", title="").scale(zero=False),
+            yError=alt.YError(f"std:Q"),
+            color=alt.Color("condition:N", title="Condition"),
+        )
+    )
+
+    all_chart_sdtw = (
+        alt.layer(all_lines_sdtw, all_points_sdtw, all_error_bars_sdtw)
+        .resolve_scale(y="shared")
+        .properties(
+            width=500,
+            height=400,
+            title=alt.TitleParams(text=f"SDTW Distances", fontSize=24, subtitle="Between Individuals", subtitleFontSize=22),
+        )
+        .configure_legend(titleFontSize=27, labelFontSize=25)
+    )
+    all_chart_sdtw.save(here() / "results" / "plots" / f"all_cross_sdtw_motion_damp.pdf")
+    mo.ui.altair_chart(all_chart_sdtw)
+    return
+
+
+@app.cell(hide_code=True)
+def _():
     mo.md(r"""# Unified Model - Cross BC Audio Delay""")
     return
 
@@ -938,6 +1059,66 @@ def _(cross_bc_base, process_all_for_audio_delay):
     all_delays_df = pl.concat([cross_bc_base.with_columns(condition=pl.lit("Base")), all_delays_df])
     all_delays_df
     return (all_delays_df,)
+
+
+@app.cell
+def _(all_delays_df):
+    allDelays_agg = (
+        all_delays_df.group_by(["condition", "strength"])
+        .agg(pl.col("Value").mean().alias("mean"), pl.col("Value").std().alias("std"))
+        .sort("strength")
+    )
+    allDelays_agg
+    return (allDelays_agg,)
+
+
+@app.cell
+def _(allDelays_agg, baseline_color, intervened_color):
+    alt.theme.enable("ggplot2")
+    alldelay_bc_base = alt.Chart(allDelays_agg).encode(
+        x=alt.X("strength:N", axis=alt.Axis(title="Strength", titleFontSize=22, labelFontSize=20, labelAngle=0)),
+        y=alt.Y(
+            f"mean:Q",
+            axis=alt.Axis(title="Beat Consistency", titleFontSize=22, labelFontSize=20),
+        ),
+        color=alt.Color("condition:N", title="Condition").scale(range=[baseline_color, intervened_color]),
+        shape=alt.Shape("condition:N", title="Condition", legend=None),
+        strokeDash=alt.StrokeDash("condition:N", title="Condition", legend=None),
+    )
+
+    alldelay_bc_points = alldelay_bc_base.mark_point(filled=True, size=90)
+    alldelay_bc_lines = alldelay_bc_base.mark_line(point=False)
+    # For error bars, use separate chart but keep consistent encoding
+    alldelay_bc_error_bars = (
+        alt.Chart(allDelays_agg)
+        .mark_errorbar(clip=True, ticks=True, size=25, thickness=5)
+        .encode(
+            x="strength:N",
+            y=alt.Y(f"mean:Q", title="").scale(zero=False),
+            yError=alt.YError(f"std:Q"),
+            color=alt.Color("condition:N", title="Condition"),
+        )
+    )
+
+    alldelay_chart_bc = (
+        alt.layer(alldelay_bc_points, alldelay_bc_lines, alldelay_bc_error_bars)
+        .resolve_scale(y="shared")
+        .properties(
+            width=500,
+            height=400,
+            title=alt.TitleParams(
+                text=f"Beat Consistency - Cross Person",
+                fontSize=24,
+                subtitle="Audio Delay Intervention",
+                subtitleFontSize=20,
+            ),
+        )
+        .configure_legend(titleFontSize=22, labelFontSize=20)
+    )
+
+    alldelay_chart_bc.save(here() / f"results/plots/all_delay_summa_cross_beat_consistency.pdf")
+    mo.ui.altair_chart(alldelay_chart_bc)
+    return
 
 
 @app.cell
@@ -979,6 +1160,12 @@ def _(bc_joined_all_delays):
 
 @app.cell
 def _(bc_joined_all_delays):
+    bc_joined_all_delays.group_by(["condition", "strength"]).agg(pl.col("Value").mean()).sort("strength").to_pandas()
+    return
+
+
+@app.cell
+def _(bc_joined_all_delays):
     bc_all_delay_lmem_model = smf.mixedlm(
         f"Value ~ strength",
         bc_joined_all_delays.to_pandas(),
@@ -1012,6 +1199,12 @@ def _(cross_bc_base_path):
     all_cross_bc_damp_paths = mo.ui.file_browser(initial_path=here() / "results/", filetypes=[".parquet"])
     mo.hstack([cross_bc_base_path, all_cross_bc_damp_paths])
     return (all_cross_bc_damp_paths,)
+
+
+@app.cell
+def _():
+    pl.read_parquet("/Users/ojas/projects/gig_interveners/results/d2/sdtw_results.parquet")
+    return
 
 
 @app.cell
@@ -1070,6 +1263,66 @@ def _(all_damp, person_mapping, session1_silence):
 
 @app.cell
 def _(bc_joined_all_damp):
+    alldamp_bc_agg = (
+        bc_joined_all_damp.group_by(["condition", "strength"])
+        .agg(pl.col("Value").mean().alias("mean"), pl.col("Value").std().alias("std"))
+        .sort("strength")
+    )
+    alldamp_bc_agg
+    return (alldamp_bc_agg,)
+
+
+@app.cell
+def _(alldamp_bc_agg, baseline_color, intervened_color):
+    alt.theme.enable("ggplot2")
+    alldamp_bc_base = alt.Chart(alldamp_bc_agg).encode(
+        x=alt.X("strength:N", axis=alt.Axis(title="Strength", titleFontSize=22, labelFontSize=20, labelAngle=0)),
+        y=alt.Y(
+            f"mean:Q",
+            axis=alt.Axis(title="Beat Consistency", titleFontSize=22, labelFontSize=20),
+        ),
+        color=alt.Color("condition:N", title="Condition").scale(range=[baseline_color, intervened_color]),
+        shape=alt.Shape("condition:N", title="Condition", legend=None),
+        strokeDash=alt.StrokeDash("condition:N", title="Condition", legend=None),
+    )
+
+    alldamp_bc_points = alldamp_bc_base.mark_point(filled=True, size=90)
+    alldamp_bc_lines = alldamp_bc_base.mark_line(point=False)
+    # For error bars, use separate chart but keep consistent encoding
+    alldamp_bc_error_bars = (
+        alt.Chart(alldamp_bc_agg)
+        .mark_errorbar(clip=True, ticks=True, size=25, thickness=5)
+        .encode(
+            x="strength:N",
+            y=alt.Y(f"mean:Q", title="").scale(zero=False),
+            yError=alt.YError(f"std:Q"),
+            color=alt.Color("condition:N", title="Condition"),
+        )
+    )
+
+    alldamp_chart_bc = (
+        alt.layer(alldamp_bc_lines, alldamp_bc_points, alldamp_bc_error_bars)
+        .resolve_scale(y="shared")
+        .properties(
+            width=500,
+            height=400,
+            title=alt.TitleParams(
+                text=f"Beat Consistency - Cross Person",
+                fontSize=24,
+                subtitle="Motion Dampening",
+                subtitleFontSize=20,
+            ),
+        )
+        .configure_legend(titleFontSize=22, labelFontSize=20)
+    )
+
+    alldamp_chart_bc.save(here() / f"results/plots/all_damp_summa_cross_beat_consistency.pdf")
+    mo.ui.altair_chart(alldamp_chart_bc)
+    return
+
+
+@app.cell
+def _(bc_joined_all_damp):
     bc_joined_all_damp_lmem = bc_joined_all_damp.with_columns(pl.col("strength").cast(pl.String))
     return (bc_joined_all_damp_lmem,)
 
@@ -1100,6 +1353,150 @@ def _(res_all_damp_lmem):
 @app.cell
 def _(bc_joined_all_damp_lmem):
     smf.ols(formula="Value ~ C(condition) + C(strength)", data=bc_joined_all_damp_lmem.to_pandas()).fit().summary()
+    return
+
+
+@app.cell(hide_code=True)
+def _():
+    mo.md(r"""# Unified Model - CRQA Dampening""")
+    return
+
+
+@app.cell
+def _(crqa_base_path):
+    all_crqa_damp_paths = mo.ui.file_browser(initial_path=here() / "results/", filetypes=[".parquet"])
+    mo.hstack([crqa_base_path, all_crqa_damp_paths])
+    return (all_crqa_damp_paths,)
+
+
+@app.cell
+def _(all_crqa_damp_paths):
+    def process_all_for_crqa():
+        tmp = []
+        for i in range(5):
+            p = all_crqa_damp_paths.path(i)
+            delay = float(p.parent.name[-1:]) * 10
+            tmp.append(pl.read_parquet(p).with_columns(strength=pl.lit(delay), condition=pl.lit("Intervened")))
+        all_df = (
+            pl.concat(tmp)
+            .with_columns(pl.col("Value").cast(pl.Float32), pl.col("chunk").cast(pl.Int32))
+            .filter(pl.col("Value").is_not_nan())
+        )
+        return all_df
+    return (process_all_for_crqa,)
+
+
+@app.cell
+def _(crqa_base_path, process_all_for_crqa):
+    all_crqa_damp_df = process_all_for_crqa()
+    cross_crqa_base = pl.read_parquet(crqa_base_path.path(index=0))
+    cross_crqa_base = cross_crqa_base.with_columns(
+        pl.col("Value").cast(pl.Float32),
+        pl.col("chunk").cast(pl.Int32),
+        strength=pl.lit(0).cast(pl.Float64),
+        condition=pl.lit("Base"),
+    ).filter(pl.col("Value").is_not_nan())
+    all_crqa_damp_df = pl.concat([cross_crqa_base, all_crqa_damp_df])
+    return (all_crqa_damp_df,)
+
+
+@app.cell
+def _(crqa_metric_choice):
+    crqa_metric_choice
+    return
+
+
+@app.cell(hide_code=True)
+def _(all_crqa_damp_df, crqa_metric_choice, person_mapping, session1_silence):
+    # Joining the results of the two dataframes for comparison
+    crqa_joined_all_damp = (
+        all_crqa_damp_df.filter(pl.col("Metric").eq(crqa_metric_choice.value.replace("_", " ")))
+        .with_columns(
+            # adding a new column to get the unique pairs out
+            pl.concat_str([pl.col("person1"), pl.col("person2")], separator="_").alias("pair"),
+            pl.concat_str([pl.col("person1"), pl.col("person2"), pl.col("chunk")], separator="_").alias("pair_chunk"),
+        )
+        .unique(subset=["pair_chunk", "Metric", "condition", "strength"], keep="first")
+        .with_columns(
+            # adding a new column to get the unique rows associated to each person, allowing for summary stats calculation
+            pl.concat_list([pl.col("person1"), pl.col("person2")]).alias("person_list"),
+        )
+        .explode("person_list")
+        .rename({"person_list": "person"})
+        .with_columns(pl.col("person").replace(person_mapping))
+        .join(
+            session1_silence.with_columns(pl.col("chunk") - 1),
+            how="left",
+            left_on=["person", "chunk"],
+            right_on=["person", "chunk"],
+        )
+        .filter(pl.col("is_silent") == False)
+        .group_by(["person", "condition", "pair", "pair_chunk", "chunk", "strength"])
+        .agg(pl.col("Value").mean())
+    )
+
+    crqa_damp_agg = (
+        crqa_joined_all_damp.group_by(["condition", "strength"])
+        .agg(pl.col("Value").mean().alias("mean"), pl.col("Value").std().alias("std"))
+        .sort("strength")
+    )
+    crqa_damp_agg
+    return (crqa_damp_agg,)
+
+
+@app.cell
+def _(baseline_color, crqa_damp_agg, crqa_metric_choice, intervened_color):
+    alt.theme.enable("ggplot2")
+    crqa_damp_base_ch = alt.Chart(crqa_damp_agg).encode(
+        x=alt.X("strength:N", axis=alt.Axis(title="Strength", titleFontSize=22, labelFontSize=20, labelAngle=0)),
+        y=alt.Y(
+            f"mean:Q",
+            axis=alt.Axis(
+                title=f"{crqa_metric_choice.value.replace('_', ' ').title()}", titleFontSize=22, labelFontSize=20
+            ),
+        ),
+        color=alt.Color("condition:N", title="Condition").scale(range=[baseline_color, intervened_color]),
+        shape=alt.Shape("condition:N", title="Condition", legend=None),
+        strokeDash=alt.StrokeDash("condition:N", title="Condition", legend=None),
+    )
+
+    crqa_ch_points = crqa_damp_base_ch.mark_point(filled=True, size=90)
+    crqa_ch_lines = crqa_damp_base_ch.mark_line(point=False)
+    # For error bars, use separate chart but keep consistent encoding
+    crqa_ch_error_bars = (
+        alt.Chart(crqa_damp_agg)
+        .mark_errorbar(clip=True, ticks=True, size=25, thickness=5)
+        .encode(
+            x="strength:N",
+            y=alt.Y(f"mean:Q", title="").scale(zero=False),
+            yError=alt.YError(f"std:Q"),
+            color=alt.Color("condition:N", title="Condition"),
+        )
+    )
+
+    crqa_all_full_ch = (
+        alt.layer(crqa_ch_lines, crqa_ch_points, crqa_ch_error_bars)
+        .resolve_scale(y="shared")
+        .properties(
+            width=500,
+            height=400,
+            title=alt.TitleParams(
+                text="CRQA - Cross Person",
+                fontSize=24,
+                subtitle="Motion Dampening",
+                subtitleFontSize=20,
+            ),
+        )
+        .configure_legend(titleFontSize=22, labelFontSize=20)
+    )
+
+    crqa_all_full_ch.save(here() / f"results/plots/all_damp_crqa{crqa_metric_choice.value}.pdf")
+    mo.ui.altair_chart(crqa_all_full_ch)
+    return
+
+
+@app.cell
+def _():
     return
 
 
