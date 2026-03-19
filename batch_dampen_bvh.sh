@@ -14,7 +14,7 @@ fi
 OUTPUT_SUFFIX="$1"
 N_JOBS="$2"
 BASE_FOLDER=~/data/dnd/Session_1
-CONFIG_PATH=./configs/joint_params.yaml
+CONFIG_PATH=./configs/joint_params2.yaml
 LABELS=("a" "b" "c" "j" "l")
 
 for LABEL in "${LABELS[@]}"; do

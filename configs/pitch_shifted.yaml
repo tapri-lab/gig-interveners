@@ -1,8 +1,8 @@
 base_data_path: "/home/ojas/data/dnd/Session_1/"
 metrics_to_run:
-  #  - beat_consistency
+  - beat_consistency
   #- sdtw
-  #- cross_beat_consistency
+  - cross_beat_consistency
   - sdtw_pitch_shifted
 bvh_audio_folder_paths:
   person1:  

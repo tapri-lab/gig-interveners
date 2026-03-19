@@ -65,7 +65,6 @@ def run_dampening_experiments(
 
         # Replace the expected config file with our temporary version
         joint_params_path.write_text(tmp_joint_path.read_text())
-
         try:
             subprocess.run(["./batch_dampen_bvh.sh", suffix, str(n_jobs)], check=True)
             subprocess.run(

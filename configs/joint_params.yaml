@@ -1,25 +1,25 @@
 joint_params:
-  RightHand: 
+  LeftArm:
     damping_factor: 0.9
-    sigma: 10
     iterations: 8
-  RightArm: 
+    sigma: 40
+  LeftForeArm:
     damping_factor: 0.9
+    iterations: 8
+    sigma: 40
+  LeftHand:
+    damping_factor: 0.9
+    iterations: 8
     sigma: 20
-    iterations: 8
-  RightForeArm: 
+  RightArm:
     damping_factor: 0.9
+    iterations: 8
+    sigma: 40
+  RightForeArm:
+    damping_factor: 0.9
+    iterations: 8
+    sigma: 40
+  RightHand:
+    damping_factor: 0.9
+    iterations: 8
     sigma: 20
-    iterations: 8
-  LeftHand: 
-    damping_factor: 0.9
-    sigma: 10
-    iterations: 8
-  LeftArm: 
-    damping_factor: 0.9
-    sigma: 20
-    iterations: 8
-  LeftForeArm: 
-    damping_factor: 0.9
-    sigma: 20
-    iterations: 8
